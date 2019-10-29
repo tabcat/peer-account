@@ -1,0 +1,31 @@
+{
+  "name": "peer-account",
+  "version": "0.0.1",
+  "description": "agent for self-sovereign, private account stores",
+  "main": "src/index.js",
+  "scripts": {
+    "test": "mocha --exit"
+  },
+  "standard": {
+    "env": "mocha"
+  },
+  "keywords": [
+    "peer-account",
+    "peer",
+    "account",
+    "orbit-db",
+    "ipfs"
+  ],
+  "author": "andersb@tuta.io",
+  "license": "MIT",
+  "devDependencies": {
+    "@tabcat/ipfs-bundle-t": "0.0.6",
+    "mocha": "^6.2.1",
+    "orbit-db": "^0.22.0",
+    "rimraf": "^3.0.0"
+  },
+  "dependencies": {
+    "@tabcat/encrypted-docstore": "^3.0.1",
+    "@tabcat/peer-account-crypto": "0.0.3"
+  }
+}
