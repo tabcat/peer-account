@@ -14,19 +14,20 @@ const setStatus = (codes) => {
 }
 
 const setLogOutputs = (self, scope, log) => {
-  if (!log) {
-    self.log = debug(scope)
-    self.log.error = debug(`${scope}:error`)
-  } else {
-    self.log = log.extend(scope)
-    self.log.error = log.extend(`${scope}:error`)
-  }
+  if (!log) log = debug('')
+  self.log = log.extend(scope)
+  self.log.log = console.log.bind(console)
+  self.log.error = log.extend(`${scope}:error`)
+  self.log.error.log = console.error.bind(console)
   if (self.events) {
-    self.log.log = (...p) => self.events.emit('debug', ...p)
-    self.log.error.log = (...p) => self.events.emit('error', ...p)
-  } else {
-    self.log.log = (...p) => console.log(...p)
-    self.log.error.log = (...p) => console.error(...p)
+    self.log = (...p) => {
+      self.log(...p)
+      self.events.emit('debug', ...p)
+    }
+    self.log.error = (...p) => {
+      self.log(...p)
+      self.events.emit('error', ...p)
+    }
   }
 }
 
