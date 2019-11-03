@@ -35,7 +35,8 @@ class Manifest {
       new Manifest(account, await account.componentIndex(this.indexKey))
     manifest.log('instance created')
     await manifest.addAddr(account._index._docstore.address.toString())
-    return manifest
+    await manifest.addAddr(manifest._index._docstore.address.toString())
+    account[this.indexKey] = manifest
   }
 
   async open () {

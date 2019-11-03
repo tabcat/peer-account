@@ -19,6 +19,7 @@ const setLogOutputs = (self, scope, log) => {
   self.log.log = console.log.bind(console)
   self.log.error = log.extend(`${scope}:error`)
   self.log.error.log = console.error.bind(console)
+  debug.enable(`${scope}:error`)
   if (self.events) {
     self.log = (...p) => {
       self.log(...p)
