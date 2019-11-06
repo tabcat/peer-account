@@ -21,14 +21,14 @@ class PeerAccount {
     if (!accountIndex) throw new Error('accountIndex must be defined')
     this._orbitdbC = orbitdbC
     this._index = accountIndex
-    options = { ...options, components: options.components || {} }
-    this.options = options
 
+    options = { ...options, components: { ...options.components } || {} }
+    this.options = options
     options.components = Object.keys(options.components)
-      .reduce((a, c) => ({ ...a, [c.indexKey.toString()]: c }), {})
+      .reduce((a, c) => ({ ...a, [c.indexKey]: c }), {})
     if (
-      Object.keys(this.options.components).length !==
-      Object.keys(options.components).length
+      Object.keys(options.components).length !==
+      Object.keys(this.options.components).length
     ) throw new Error('duplicate indexKey properties in optional components')
     this.options.components = options.components
     this._components = {
@@ -55,6 +55,8 @@ class PeerAccount {
         await this._components[Manifest.indexKey]
           .attatch(this, this.options[Manifest.indexKey])
         this.log(`${Manifest.indexKey} component attached`)
+        this._orbitdbC.events.on('openDb', this[Manifest.indexKey].addAddr)
+        this._orbitdbC.events.on('dropDb', this[Manifest.indexKey].delAddr)
       }
       if (
         this._components[Contacts.indexKey] &&
