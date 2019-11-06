@@ -63,7 +63,7 @@ class PeerAccount {
         this._components[Contacts.indexKey].indexKey === Contacts.indexKey
       ) {
         await this._components[Contacts.indexKey]
-          .attatch(this, this.options[Contacts.indexKey])
+          .attatch(this, this.options[Contacts.indexKey] || { load: true })
         this.log(`${Contacts.indexKey} component attached`)
       }
       await Promise.all([
@@ -81,7 +81,7 @@ class PeerAccount {
             ) return true
           })
           .map(async (k) => {
-            await this._components[k].attach(this)
+            await this._components[k].attach(this, this.options[k])
             this.log(`${k} component attached`)
           })
       ])

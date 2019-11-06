@@ -3,179 +3,262 @@
 const EventEmitter = require('events').EventEmitter
 const AsymChannel = require('../sessions/asymChannel')
 const Contact = require('../sessions/contact')
+const OfferName = require('./offerName')
+
+const status = {
+  PRE_INIT: 'PRE_INIT',
+  INIT: 'INIT',
+  READY: 'READY',
+  FAILED: 'FAILED'
+}
+const setStatus = require('./utils').setStatus(status)
+const setLogOutputs = require('./utils').setLogOutput
 
 class Contacts {
-  constructor (orbitdbC, index, options = {}) {
-    this._orbitdbC = orbitdbC
+  constructor (account, index, options = {}) {
+    if (!account) throw new Error('account must be defined')
+    if (!index) throw new Error('index must be defined')
+    this._orbitdbC = account._orbitdbC
     this._index = index
     this.options = options
     this._contacts = {}
     this._channels = {}
     this.events = new EventEmitter()
-    this.initialized = this.initialize()
+    this.initialized = this._initialize()
+    setStatus(this, status.PRE_INIT)
+    setLogOutputs(this, this.indexKey, account.log)
+    this.events.on('status', status => this.log(`status set to ${status}`))
+    this.log('instance created')
   }
 
-  async initialize () {
+  async _initialize () {
     try {
-      return Promise.all([
-        this._getRecords(Contact.type)
-          .then(docs => Promise.all(
-            docs.map((doc) => this.openContact(doc.name))
-          )),
-        this._getRecords(AsymChannel.type)
-          .then(docs => docs.filter(doc => !doc.retired))
-          .then(docs => Promise.all(
-            docs.map((doc) => this.openChannel(doc.name))
-          ))
-      ])
+      setStatus(this, status.INIT)
+      if (this.options.load) {
+        await Promise.all([
+          this._getRecords(Contact.type)
+            .then(docs => Promise.all(
+              docs.map((doc) => this.openContact(doc.name))
+            )),
+          this._getRecords(AsymChannel.type)
+            .then(docs => docs.filter(doc => !doc.retired))
+            .then(docs => Promise.all(
+              docs.map((doc) => this.openChannel(doc.name))
+            ))
+        ])
+      }
+      setStatus(this, status.READY)
     } catch (e) {
-      console.error(e)
-      this.events.emit('error', 'init failed')
+      this.log.error(e)
+      setStatus(this, status.FAILED)
+      throw new Error(`${Contacts.indexKey} failed initialization`)
     }
   }
 
   static get indexKey () { return 'contacts' }
 
-  static async attach (account) {
+  static async attach (account, options) {
     if (!account) throw new Error('account must be defined')
     const contacts = new Contacts(
-      account._orbitdbC,
-      await account.componentIndex(this.indexKey)
+      account,
+      await account.componentIndex(this.indexKey),
+      options
     )
     await contacts.initialized
-    return contacts
-  }
-
-  async openContact (name) {
-    if (this._contacts[name]) return this._contacts[name]
-    const contactRecord = await this._matchRecord(name)
-    if (!contactRecord) throw new Error('contact record not found')
-    const { session, options } = contactRecord
-    const contact = await Contact.open(
-      this._orbitdbC,
-      session.offer,
-      session.capability,
-      options
-    )
-    this._contacts = { ...this._contacts, [name]: contact }
-    return this._contacts[name]
-  }
-
-  async openChannel (name) {
-    if (this._channels[name]) return this._channels[name]
-    const channelRecord = await this._matchRecord(name)
-    if (!channelRecord) throw new Error('channel record not found')
-    const { session, options } = channelRecord
-    const channel = await AsymChannel.open(
-      this._orbitdbC,
-      session.offer,
-      session.capability,
-      options
-    )
-    this._channels = { ...this._channels, [name]: channel }
-    return this._channels[name]
+    account[this.indexKey] = contacts
   }
 
   async addContact (channelAddress, options = {}) {
-    const { origin, meta, ...contactOptions } = options
-    const channel = await AsymChannel.fromAddress(
-      this._orbitdbC,
-      channelAddress,
-      contactOptions
-    )
-    await channel.initialized
-    const contact = await Contact.offer(
-      this._orbitdbC,
-      { ...contactOptions, recipient: channel._state.options.meta.owner.id }
-    )
-    await Promise.all([
-      channel.sendOffer(contact.offer),
-      this._index.set(
-        contact.offer.name,
-        {
-          name: contact.offer.name,
-          origin: options.origin || channelAddress,
-          session: contact.toJSON(),
-          meta: meta || {}
-        }
-      )
-    ])
-    console.log(`to accept the contact request you just sent,
-      paste this in the tab you copied the code to add the contact from:
-      'await user.contacts.acceptOffer('${contact.offer.name}')'
-      `)
-    this.events.emit('newContact', contact)
-    return contact
-  }
-
-  async createChannel (options = {}) {
     await this.initialized
-    const { retired, meta, ...channelOptions } = options
-    options = { ...channelOptions, supported: ['contact'] }
-    const channel = await AsymChannel.offer(this._orbitdbC, options)
-    await this._index.set(
-      channel.offer.name,
-      {
-        name: channel.offer.name,
-        options,
-        session: channel.toJSON(),
-        retired: retired || false,
-        meta: meta || {}
-      }
-    )
-    this._channels = { ...this._channels, [channel.offer.name]: channel }
-    this.events.emit('newChannel', channel.offer.name)
-    return this.openChannel(channel.offer.name, options)
-  }
-
-  // async retireSpawner (name, options) {
-  //   await this.initialized
-  //   if (!await this.spawner(name)) {
-  //     throw new Error('spawner with that name does not exist')
-  //   }
-  //   if (this._spawners[name]) {
-  //     this._spawners[name].stop()
-  //     delete this.spawners[name]
-  //   }
-  //   const spawnerRecord = await this._matchRecord('spawner', name)
-  //   this._index.set({
-  //     ...spawnerRecord,
-  //     retired: true
-  //   })
-  //   this.events.emit('retiredSpawner', name)
-  // }
-
-  async offers () {
-    const channelOffers = await Promise.all(
-      Object.keys(this._channels)
-        .map(async (name) => [name, await this._channels[name].getOffers()])
-    )
-    return channelOffers.reduce(
-      (acc, cur) => ({ ...acc, [cur[0]]: cur[1] }),
-      {}
-    )
-  }
-
-  async acceptOffer (name, options = {}) {
-    const { origin, meta, ...contactOptions } = options
-    const [channelKey, offer] = (await Promise.all(
-      Object.keys(this._channels)
-        .map(async (key) => [key, await this._channels[key].getOffer(name)])
-    ).then(offers => offers.filter(offer => offer[1])))[0] // remove undefined
-    if (!offer) throw new Error('offer does not exist')
-    const idKey = this._channels[channelKey].offer.name
-    const contact = await Contact.accept(this._orbitdbC, offer, { ...contactOptions, idKey })
+    if (!channelAddress) throw new Error('channelAddress must be defined')
+    if (!this._orbitdbC.isValidAddress(channelAddress)) {
+      throw new Error(
+        `channelAddress ${channelAddress} is not a valid orbitdb address`
+      )
+    }
+    const contact = await Contact.fromAddress(this._orbitdbC, channelAddress)
     await this._index.set(
       contact.offer.name,
       {
         name: contact.offer.name,
-        origin: options.origin || channelKey,
-        session: contact.toJSON(),
-        meta: meta || {}
+        channelAddress,
+        origin: options.origin || channelAddress,
+        meta: options.meta || {}
       }
     )
+    this.log(`contact ${contact.offer.name} partial record added`)
+
+    contact.events.once('status:READY', async () => {
+      const record = await this._matchRecord(contact.offer.name)
+      if (!record) {
+        this.log.error(
+          `contact ${contact.offer.name} is ready but record does not exist to update.`
+        )
+      }
+      await this._index.set(
+        contact.offer.name,
+        {
+          ...record,
+          session: contact.toJSON()
+        }
+      )
+      this.log(`contact ${contact.offer.name} session field added to record`)
+    })
+
     this.events.emit('newContact', contact)
-    return contact
+    this._contacts = { ...this._contact, [contact.offer.name]: contact }
+    return this._contacts[contact.offer.name]
+  }
+
+  async openContact (offerName) {
+    await this.initialized
+    if (!offerName) throw new Error('offerName must be defined')
+    const { name, type } = OfferName.parse(offerName)
+    if (type !== Contact.type) {
+      throw new Error(
+        `offerName type must be '${Contact.type}' but was '${type}'`
+      )
+    }
+    if (this._contacts[name]) return this._contacts[name]
+    const record = await this._matchRecord(name)
+    if (!record) throw new Error(`no record for contact ${name}`)
+    if (!record.channelAddress && !record.session) {
+      throw new Error(
+        `contact ${name} record did not contain a channelAddress or session field`
+      )
+    }
+
+    const contact = record.sessions
+      ? await Contact.open(
+        this._orbitdbC,
+        record.session.offer,
+        record.session.capability
+      )
+      : await Contact.fromAddress(this._orbitdbC, record.channelAddress)
+
+    this._contacts = { ...this._contacts, [name]: contact }
+    return this._contacts[name]
+  }
+
+  async closeContact () {}
+
+  async createChannel (options = {}) {
+    await this.initialized
+    const channel = await AsymChannel.offer(
+      this._orbitdbC,
+      { supported: [Contact.type] }
+    )
+    await this._index.set(
+      channel.offer.name,
+      {
+        name: channel.offer.name,
+        options: options,
+        session: channel.toJSON(),
+        retired: options.retired || false,
+        meta: options.meta || {}
+      }
+    )
+    this._channels = { ...this._channels, [channel.offer.name]: channel }
+    this.events.emit('newChannel', channel.offer.name)
+    return this._channels[channel.offer.name]
+  }
+
+  async openChannel (offerName) {
+    await this.initialized
+    if (!offerName) throw new Error('offerName must be defined')
+    const { name, type } = OfferName.parse(offerName)
+    if (type !== AsymChannel.type) {
+      throw new Error(
+        `offerName type must be '${AsymChannel.type}' but was '${type}'`
+      )
+    }
+    if (this._channels[name]) return this._channels[name]
+    const channelRecord = await this._matchRecord(name)
+    if (!channelRecord) throw new Error('no record')
+
+    const { session } = channelRecord
+    const channel = await AsymChannel.open(
+      this._orbitdbC,
+      session.offer,
+      session.capability
+    )
+
+    this._channels = { ...this._channels, [name]: channel }
+    return this._channels[name]
+  }
+
+  async closeChannel () {}
+
+  async contactOffer (offerName) {
+    if (!offerName) throw new Error('offerName must be defined')
+    const { name } = OfferName.parse(offerName)
+    const channelOffer = await Promise.all(
+      Object.keys(this._channels).map(
+        async (k) => [k, await this._channels[k].getOffer(name)]
+      )
+    ).then(arr => arr.filter(v => v[1])[0])
+    if (channelOffer.length > 1) {
+      throw new Error('more than one channel with that offer')
+    }
+    return { channelKey: channelOffer[0], contactOffer: channelOffer[1] }
+  }
+
+  async contactOffers () {
+    const channelOffers = await Promise.all(
+      Object.keys(this._channels).map(
+        async (k) => [k, this._channels[k].getOffers()]
+      )
+    )
+    return channelOffers.reduce((a, c) => ({ ...a, [c[0]]: c[1] }), {})
+  }
+
+  async acceptOffer (offerName, options = {}) {
+    if (!offerName) throw new Error('offerName must be defined')
+    const { name } = OfferName.parse(offerName)
+    const { channelKey, contactOffer } = await this.contactOffer(name)
+    if (!contactOffer) throw new Error('offer does not exist')
+
+    const contact = await Contact.accept(
+      this._orbitdbC,
+      contactOffer,
+      { idKey: this._channels[channelKey].offer.name }
+    )
+    await this._index.set(
+      contact.offer.name,
+      {
+        name: contact.offer.name,
+        channelAddress:
+          this._channels[channelKey]._state._docstore.address.toString(),
+        origin: options.origin || channelKey,
+        session: contact.toJSON(),
+        meta: options.meta || {}
+      }
+    )
+    this.log(`contact ${contact.offer.name} complete record added`)
+
+    this.events.emit('newContact', contact)
+    this._contacts = { ...this._contact, [contact.offer.name]: contact }
+    return this._contacts[contact.offer.name]
+  }
+
+  get contacts () { return this._contacts }
+
+  get channels () { return this._channels }
+
+  async queryContacts (mapper) {
+    if (typeof mapper !== 'function') {
+      throw new Error('mapper must be type function')
+    }
+    const records = await this._getRecords(Contact.type)
+    return records.filter(mapper)
+  }
+
+  async queryChannels (mapper) {
+    if (typeof mapper !== 'function') {
+      throw new Error('mapper must be type function')
+    }
+    const records = await this._getRecords(AsymChannel.type)
+    return records.filter(mapper)
   }
 
   // async declineRequest (requestId, options) {}

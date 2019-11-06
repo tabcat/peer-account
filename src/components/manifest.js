@@ -25,6 +25,8 @@ class Manifest {
     this.events = new EventEmitter()
     setStatus(this, status.OPEN)
     setLogOutputs(this, this.indexKey, this._account.log)
+    this.events.on('status', status => this.log(`status set to ${status}`))
+    this.log('instance created')
   }
 
   static get indexKey () { return 'manifest' }
@@ -33,7 +35,6 @@ class Manifest {
     if (!account) throw new Error('account must be defined')
     const manifest =
       new Manifest(account, await account.componentIndex(this.indexKey))
-    manifest.log('instance created')
     await manifest.addAddr(account._index._docstore.address.toString())
     await manifest.addAddr(manifest._index._docstore.address.toString())
     account[this.indexKey] = manifest
