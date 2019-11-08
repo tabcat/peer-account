@@ -1,17 +1,17 @@
 
-/*
-  this is a template class
-*/
-
 'use strict'
 const Identities = require('orbit-db-identity-provider')
 
 class Session {
   constructor (state, offer, capability) {
     this._state = state
-    this.offer = offer
+    this._offer = offer
     this._capability = capability
   }
+
+  get offer () { return this._offer }
+
+  get capability () { return this._capability }
 
   // session type
   static get type () { return 'session' }
@@ -21,7 +21,7 @@ class Session {
   toJSON () {
     return {
       offer: this.offer,
-      capability: this._capability
+      capability: this.capability
     }
   }
 

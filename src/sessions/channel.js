@@ -1,15 +1,10 @@
 
-/*
-  this is a template class
-*/
-
 'use strict'
 const Session = require('./session')
 
 class Channel extends Session {
-  constructor (orbitdbC, db, offer, capability, options = {}) {
+  constructor (db, offer, capability, options = {}) {
     super(db, offer, capability)
-    this._orbitdbC = orbitdbC
     this.options = options
     this.direction = 'recipient'
     this._supported = []
@@ -31,12 +26,10 @@ class Channel extends Session {
 
   async getOffers () {}
 
-  _isValidOffer (now, validator = {}) {
-    validator = typeof validator === 'function'
-      ? validator
-      : (op) =>
-        this.direction === 'recipient' ||
-        op.identity.id === this._capability.id
+  _isValidOffer (now, validator = () => true) {
+    if (typeof validator !== 'function') {
+      throw new Error('given validator was not a function')
+    }
     return (op) => {
       const offer = op.payload.value
       return this.isSupported(offer.type) &&
@@ -48,7 +41,7 @@ class Channel extends Session {
               ? offer.timestamp + this.offer.meta.lifetime >= now
               : true
             : false
-          : true
+          : false
       ) && validator(op)
     }
   }
