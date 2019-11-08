@@ -33,7 +33,7 @@ class OfferName {
 
   static generate (type) {
     if (!type) throw new Error('offerType is not defined')
-    if (!type.toString) {
+    if (typeof type.toString !== 'function') {
       throw new Error('type is not a string')
     }
     if (type.toString().split('-').length > 1) {
@@ -47,7 +47,7 @@ class OfferName {
 
   static parse (name) {
     if (!name) throw new Error('name is not defined')
-    if (!name.toString) {
+    if (typeof name.toString !== 'function') {
       throw new Error('name is not a string')
     }
     if (!this.isValid(name.toString())) {
@@ -59,16 +59,22 @@ class OfferName {
 
   static isValid (name) {
     if (!name) throw new Error('name is not defined')
-    if (!name.toString) {
+    if (typeof name.toString !== 'function') {
       throw new Error('offer name is not a string')
     }
     const string = name.toString()
-    if (
-      string.split('-').length === 2 &&
-      id(string).split('.').filter(v => v.length > 0).length === 12
-    ) {
+    return string.split('-').length === 2 &&
+      this.isValidId(id(string))
+  }
+
+  static isValidId (id) {
+    if (typeof id.toString !== 'function') {
+      throw new Error('id is not a string')
+    }
+    const string = id.toString()
+    if (string.split('.').filter(v => v.length > 0).length === 12) {
       try {
-        iv(id(string))
+        iv(string)
         return true
       } catch (e) { return false }
     } else {
