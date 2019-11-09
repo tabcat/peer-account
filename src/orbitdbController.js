@@ -42,6 +42,10 @@ class OrbitdbController {
     return db
   }
 
+  static isValidAddress (orbitdb, address) {
+    return orbitdb.constructor.isValidAddress(address)
+  }
+
   static parseAddress (orbitdb, address) {
     return orbitdb.constructor.parseAddress(address)
   }
@@ -54,6 +58,10 @@ class OrbitdbController {
   async _dbVector (dbVector, load = true) {
     if (!dbVector) throw new Error('dbVector must be defined')
     return OrbitdbController._dbVector(this._orbitdb, dbVector, load)
+  }
+
+  isValidAddress (address) {
+    return OrbitdbController.isValidAddress(this._orbitdb, address)
   }
 
   parseAddress (address) {
