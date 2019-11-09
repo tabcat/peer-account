@@ -3,10 +3,11 @@
 const Identities = require('orbit-db-identity-provider')
 
 class Session {
-  constructor (state, offer, capability) {
+  constructor (state, offer, capability, options = {}) {
     this._state = state
     this._offer = offer
     this._capability = capability
+    this.options = options
   }
 
   get offer () { return this._offer }

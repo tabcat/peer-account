@@ -16,7 +16,7 @@ const setLogOutputs = require('./utils').setLogOutput
 
 class SymChannel extends Channel {
   constructor (db, offer, capability, options = {}) {
-    super(db, offer, capability)
+    super(db, offer, capability, options)
     this._aes = null
     this.events = new EventEmitter()
     this.initialized = this._initialize()

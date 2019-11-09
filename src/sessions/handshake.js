@@ -25,7 +25,7 @@ const setLogOutputs = require('./utils').setLogOutput
 
 class Handshake extends Session {
   constructor (db, offer, capability, options = {}) {
-    super(db, offer, capability)
+    super(db, offer, capability, options)
     if (!options.identityProvider) {
       throw new Error('options.identityProvider required')
     }

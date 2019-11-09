@@ -4,8 +4,7 @@ const Session = require('./session')
 
 class Channel extends Session {
   constructor (db, offer, capability, options = {}) {
-    super(db, offer, capability)
-    this.options = options
+    super(db, offer, capability, options)
     this._supported = []
   }
 
