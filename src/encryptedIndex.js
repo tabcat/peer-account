@@ -37,7 +37,7 @@ class EncryptedIndex extends EncryptedDocstore {
       aesKey
     )
     const index = await this.open(orbitdbC, dbAddr, aesKey, dbOptions)
-    return { index, aesKey, rawKey, address: index._docstore.address }
+    return { index, aesKey, rawKey, dbAddr: index._docstore.address }
   }
 
   async match (key) {
