@@ -48,8 +48,8 @@ class AsymChannel extends Channel {
       this._supported = this.offer.meta.supported
       this.direction = this.offer.meta.owner.id === this.capability.id
         ? 'recipient' : 'sender'
-      this._state.events.on('replicated', this.events.emit('update'))
-      this._state.events.on('write', this.events.emit('update'))
+      this._state.events.on('replicated', () => this.events.emit('update'))
+      this._state.events.on('write', () => this.events.emit('update'))
       setStatus(this, status.LISTENING)
     } catch (e) {
       this.log.error(e)
@@ -218,19 +218,20 @@ class AsymChannel extends Channel {
     if (!this.isSupported(offer.type)) {
       throw new Error('unsupported session type')
     }
-    if (!this._isValidOffer(Date.now, offer)) throw new Error('invalid offer')
     if (!offer.name) throw new Error('offer must have a name')
     if (!OfferName.isValid(offer.name)) throw new Error('invalid offer name')
+    if (!this._isValidOffer(Date.now(), offer)) throw new Error('invalid offer')
 
     const offerId = OfferName.parse(offer.name).id
     if (!offer.timestamp) offer = { ...offer, timestamp: Date.now() }
 
     if (await this.getOffer(offerId)) throw new Error('offer already exists!')
+    const encryptedOffer = await this._encrypt(offer)
     return this._state.put({
       [this._state.options.indexBy]: offerId,
       id: offerId,
       key: this.capability.key,
-      cipherbytes: [...(await this._encrypt(offer)).cipherbytes]
+      cipherbytes: [...encryptedOffer.cipherbytes]
     })
   }
 
@@ -242,8 +243,8 @@ class AsymChannel extends Channel {
       const op = await this._state.query(
         op =>
           (this.direction === 'recipient' || op.id === this.capability.id) &&
-          OfferName.isValidId(op.payload.key) &&
           op.payload.key === offerId &&
+          op.payload.value.id === offerId &&
           op.payload.value.key &&
           op.payload.value.cipherbytes,
         { fullOp: true }
@@ -256,9 +257,6 @@ class AsymChannel extends Channel {
       return valid ? offer : undefined
     } catch (e) {
       this.log.error(e)
-      this.log.error(
-        `error occured while running getOffer(${offerId}), this is probably fine`
-      )
       return undefined
     }
   }
@@ -270,17 +268,13 @@ class AsymChannel extends Channel {
       op =>
         (this.direction === 'recipient' || op.id === this.capability.id) &&
         OfferName.isValidId(op.payload.key) &&
+        op.payload.key === op.payload.value.id &&
         op.payload.value.key &&
         op.payload.value.cipherbytes,
       { fullOp: true }
     )
     return Promise.all(
       ops.map(async (op) => {
-        if (
-          !op.payload.value.id ||
-          !op.payload.value.key ||
-          !op.payload.value.cipherbytes
-        ) return undefined
         try {
           const offer = await this._decrypt(op.payload.value)
           const valid = this._isValidOffer(now)(
@@ -289,9 +283,6 @@ class AsymChannel extends Channel {
           return valid ? offer : undefined
         } catch (e) {
           this.log.error(e)
-          this.log.error(
-            'error occured while running getOffers(), this is probably fine'
-          )
           return undefined
         }
       })

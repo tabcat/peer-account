@@ -6,7 +6,6 @@ class Channel extends Session {
   constructor (db, offer, capability, options = {}) {
     super(db, offer, capability)
     this.options = options
-    this.direction = 'recipient'
     this._supported = []
   }
 
