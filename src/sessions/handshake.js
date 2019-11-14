@@ -14,8 +14,8 @@ const status = {
   CONFIRMED: 'CONFIRMED',
   FAILED: 'FAILED'
 }
-const setStatus = require('./utils').setStatus(status)
-const setLogOutputs = require('./utils').setLogOutput
+const setStatus = require('../utils').setStatus(status)
+const setLogOutputs = require('../utils').setLogOutput
 
 const getIdKey = (offerName) => `idKey-${offerName}`
 

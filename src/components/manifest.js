@@ -6,8 +6,8 @@ const status = {
   OPEN: 'OPEN',
   CLOSED: 'CLOSED'
 }
-const setStatus = require('./utils').setStatus(status)
-const setLogOutputs = require('./utils').setLogOutput
+const setStatus = require('../utils').setStatus(status)
+const setLogOutputs = require('../utils').setLogOutput
 
 class Manifest {
   constructor (account, index) {

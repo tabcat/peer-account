@@ -11,8 +11,8 @@ const status = {
   LISTENING: 'LISTENING',
   FAILED: 'FAILED'
 }
-const setStatus = require('./utils').setStatus(status)
-const setLogOutputs = require('./utils').setLogOutput
+const setStatus = require('../utils').setStatus(status)
+const setLogOutputs = require('../utils').setLogOutput
 
 class SymChannel extends Channel {
   constructor (db, offer, capability, options = {}) {

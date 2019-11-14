@@ -11,8 +11,8 @@ const status = {
   READY: 'READY',
   FAILED: 'FAILED'
 }
-const setStatus = require('./utils').setStatus(status)
-const setLogOutputs = require('./utils').setLogOutput
+const setStatus = require('../utils').setStatus(status)
+const setLogOutputs = require('../utils').setLogOutput
 
 class Contacts {
   constructor (orbitdbC, index, options = {}) {
