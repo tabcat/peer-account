@@ -220,10 +220,14 @@ class AsymChannel extends Channel {
     }
     if (!offer.name) throw new Error('offer must have a name')
     if (!OfferName.isValid(offer.name)) throw new Error('invalid offer name')
-    if (!this._isValidOffer(Date.now(), offer)) throw new Error('invalid offer')
 
     const offerId = OfferName.parse(offer.name).id
-    if (!offer.timestamp) offer = { ...offer, timestamp: Date.now() }
+    if (!offer.channel) offer.channel = this._state.address.toString()
+    if (!offer.timestamp) offer.timestamp = Date.now()
+
+    if (!this._isValidOffer(Date.now(), offer)) {
+      throw new Error('tried to send invalid offer')
+    }
 
     if (await this.getOffer(offerId)) throw new Error('offer already exists!')
     const encryptedOffer = await this._encrypt(offer)

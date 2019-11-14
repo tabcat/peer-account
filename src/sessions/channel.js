@@ -31,6 +31,11 @@ class Channel extends Session {
     return (op) => {
       const offer = op.payload.value
       return this.isSupported(offer.type) &&
+      (
+        offer.channel !== undefined
+          ? offer.channel === this._state.address.toString()
+          : false
+      ) &&
       // if offer has timestamp field timestamp must be before now and alive
       (
         offer.timestamp !== undefined
