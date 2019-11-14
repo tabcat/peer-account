@@ -48,10 +48,10 @@ class SymChannel extends Channel {
     if (!offerName) throw new Error('offerName must be defined')
     offerName = OfferName.parse(offerName)
     if (offerName.type !== this.type) throw new Error('invalid offerName type')
-    if (!options.key || !options.sender || !options.recipient) {
+    if (!options.aesKey || !options.sender || !options.recipient) {
       throw new Error('missing required option fields to create offer')
     }
-    const rawKey = await crypto.aes.exportKey(options.key)
+    const rawKey = await crypto.aes.exportKey(options.aesKey)
     const keyCheck = await options.key.encrypt(
       crypto.util.str2ab(this.type),
       offerName.iv

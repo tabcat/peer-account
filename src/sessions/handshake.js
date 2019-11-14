@@ -17,6 +17,8 @@ const status = {
 const setStatus = require('./utils').setStatus(status)
 const setLogOutputs = require('./utils').setLogOutput
 
+const getIdKey = (offerName) => `idKey-${offerName}`
+
 /*
   the goal of Handshake is to securely:
     1. derive a shared aes key
@@ -263,7 +265,7 @@ class Handshake extends Session {
           )
         },
         aes: [...await crypto.aes.exportKey(await this._aesKey(state))],
-        idKey: `newIdKey-${this.offer.name}`
+        idKey: getIdKey(this.offer.name)
       }
     } else return state
   }
@@ -294,7 +296,7 @@ class Handshake extends Session {
           }
           if (this.direction === 'recipient') {
             const identity = await Handshake._identity(
-              this.newIdKey,
+              getIdKey(this.offer.name),
               this._identityProvider
             )
             const encryptedId = await this._encrypt(
@@ -319,7 +321,7 @@ class Handshake extends Session {
           ) throw new Error(`invalid ${status.ACCEPTED} state: ${state}`)
           if (this.direction === 'sender') {
             const identity = await Handshake._identity(
-              this.newIdKey,
+              getIdKey(this.offer.name),
               this._identityProvider
             )
             const encryptedId = await this._encrypt(
