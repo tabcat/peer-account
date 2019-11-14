@@ -186,6 +186,7 @@ class SymChannel extends Channel {
     const offerId = OfferName.parse(offer.name).id
     if (!offer._channel) {
       offer._channel = {
+        name: this.offer.name,
         address: this._state.address.toString(),
         timestamp: Date.now()
       }
