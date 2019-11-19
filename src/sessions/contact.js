@@ -19,7 +19,7 @@ const status = {
   FAILED: 'FAILED'
 }
 const setStatus = require('../utils').setStatus(status)
-const setLogOutputs = require('../utils').setLogOutput
+const setLogOutputs = require('../utils').setLogOutputs
 
 const supported = {
   [SymChannel.type]: SymChannel
@@ -31,27 +31,27 @@ class Contact extends Session {
     this._orbitdbC = orbitdbC
     this._channel = null
     this._sessions = {}
+    this.options[Handshake.type] = {}
     this.events = new EventEmitter()
-    this.initialized = this.initialize()
     setStatus(this, status.PRE_INIT)
-    setLogOutputs(this, Contact.type, options.log)
+    setLogOutputs(this, this.offer.name, options.log)
     this.events.on('status', status => this.log(`status set to ${status}`))
     this.log('instance created')
+    this.initialized = this.initialize()
   }
 
   async initialize () {
     try {
       setStatus(this, status.INIT)
-      if (!this.offer.recipient) {
-        throw new Error('offer does not have a recipient')
-      }
       // handles fromAddress creation
       if (this.offer.name && this.offer.channel && !this.offer.meta) {
         setStatus(this, status.SEND_OFFER)
         const asymChannel = await AsymChannel.fromAddress(
           this._orbitdbC,
-          this.offer.channel
+          this.offer.channel,
+          { log: this.log }
         )
+        await asymChannel.initialized
         if (!asymChannel.isSupported(Contact.type)) {
           throw new Error(`channel does not support ${Contact.type} offers`)
         }
@@ -78,7 +78,7 @@ class Contact extends Session {
           {
             [Handshake.type]: {
               name: handshakeName,
-              sender: capability.id,
+              sender: capability[Handshake.type].id,
               recipient: asymChannel.offer.meta.owner.id,
               curve: capability[Handshake.type].curve
             },
@@ -89,6 +89,7 @@ class Contact extends Session {
           }
         )
         await asymChannel.sendOffer(offer)
+        this.log(`offer ${offer.name} sent to asymChannel`)
         this._offer = offer
         this._capability = capability
         this.log('contact offer sent')
@@ -103,6 +104,7 @@ class Contact extends Session {
       )
 
       await handshake.initialized
+
       if (handshake.status !== 'CONFIRMED') {
         setStatus(this, status.HANDSHAKE)
         handshake.start()
@@ -128,14 +130,18 @@ class Contact extends Session {
           {
             aesKey,
             sender: shake.sender.id,
-            reciever: shake.recipient.id,
-            supported
+            recipient: shake.recipient.id,
+            supported: Object.keys(supported)
           }
         ),
         await SymChannel._genCapability(
           this.offer[SymChannel.type].name,
-          { idKey }
-        )
+          {
+            identityProvider: this._orbitdbC._orbitdb.identity._provider,
+            idKey
+          }
+        ),
+        { log: this.log }
       )
 
       const stateAesKey = await crypto.aes.importKey(new Uint8Array(
@@ -151,13 +157,17 @@ class Contact extends Session {
           name: this.offer.name,
           type: 'docstore',
           options: {
-            identity: stateIdentity,
             accessController: { write: [stateIdentity.id] },
             meta: this.offer.meta
           }
         },
         stateAesKey
-      ).then(addr => Index.openIndex(this._orbitdbC, addr, stateAesKey))
+      ).then(addr => Index.open(
+        this._orbitdbC,
+        addr,
+        stateAesKey,
+        { identity: stateIdentity }
+      ))
 
       if (!await state.match(symChannel.offer.name)) {
         await state.set(
@@ -210,7 +220,7 @@ class Contact extends Session {
         }
       ),
       [SymChannel.type]: {
-        name: options[SymChannel.type].name
+        name: options[SymChannel.type].name.toString()
       },
       meta: { sessionType: this.type },
       info: options.info || {}
@@ -236,12 +246,14 @@ class Contact extends Session {
     }
     const idKey = options.idKey || offerName.name
     const identity = await this._identity(idKey, options.identityProvider)
-    const aesKey = options.aesKey || await crypto.aes.generate(options.keyLen)
+    const aesKey = options.aesKey ||
+      await crypto.aes.generateKey(options.keyLen)
+    const rawKey = await crypto.aes.exportKey(aesKey)
 
     return {
       idKey,
       id: identity.id,
-      aes: [...aesKey],
+      aes: [...rawKey],
       [Handshake.type]: await Handshake._genCapability(
         options[Handshake.type].name,
         {
@@ -285,18 +297,22 @@ class Contact extends Session {
 
   static async offer (orbitdbC, options = {}) {
     if (!orbitdbC) throw new Error('orbitdbC must be defined')
-    if (!options.recipient) throw new Error('options.recipient is required')
+    if (!options[Handshake.type].recipient) {
+      throw new Error(
+        `options.${Handshake.type}.recipient is required`
+      )
+    }
     const offerName = OfferName.generate(this.type)
     const handshakeName = OfferName.generate(Handshake.type).name
     const capability = await this._genCapability(
       offerName,
       {
-        identityProvider: this._orbitdbC._orbitdb.identity._provider,
+        identityProvider: orbitdbC._orbitdb.identity._provider,
         idKey: options.idKey,
         aesKey: options.aesKey,
         [Handshake.type]: {
           name: handshakeName,
-          identityProvider: this._orbitdbC._orbitdb.identity._provider,
+          identityProvider: orbitdbC._orbitdb.identity._provider,
           idKey: options[Handshake.type].idKey,
           curve: options[Handshake.type].curve
         }
@@ -307,8 +323,8 @@ class Contact extends Session {
       {
         [Handshake.type]: {
           name: handshakeName,
-          sender: capability.id,
-          recipient: options.recipient,
+          sender: capability[Handshake.type].id,
+          recipient: options[Handshake.type].recipient,
           curve: capability[Handshake.type].curve
         },
         [SymChannel.type]: {
@@ -328,6 +344,7 @@ class Contact extends Session {
   static async accept (orbitdbC, offer, options = {}) {
     if (!orbitdbC) throw new Error('orbitdbC must be defined')
     if (!offer) throw new Error('offer must be defined')
+    if (!options[Handshake.type]) options[Handshake.type] = {}
     const capability = await this._genCapability(
       offer.name,
       {
@@ -346,13 +363,11 @@ class Contact extends Session {
   }
 
   // creates an instance from a channel address that accepts contact offers
-  static fromAddress (orbitdbC, address, options) {
-    if (!options.recipient) throw new Error('options.recipient is required')
+  static fromAddress (orbitdbC, address, options = {}) {
     const offerName = OfferName.generate(this.type)
     const offer = {
       name: offerName.name,
-      channel: address,
-      recipient: options.recipient
+      channel: address
     }
     return new Contact(
       orbitdbC,

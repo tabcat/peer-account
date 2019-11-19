@@ -10,7 +10,7 @@ const { timeout } = require('./utils/config')
 describe('PeerAccount', function () {
   this.timeout(timeout)
 
-  let ipfs, orbitdb, address, rawKey
+  let ipfs, orbitdb, dbAddr, rawKey
 
   before(async () => {
     rmrf.sync('./ipfs')
@@ -30,12 +30,12 @@ describe('PeerAccount', function () {
   it('generates a new account index for an account', async () => {
     const newIndex = await PeerAccount.genAccountIndex(orbitdb)
     const { index, aesKey } = newIndex
-    address = newIndex.address
+    dbAddr = newIndex.dbAddr
     rawKey = newIndex.rawKey
-    assert.strictEqual(await index.constructor.keyCheck(address, aesKey), true)
+    assert.strictEqual(await index.constructor.keyCheck(dbAddr, aesKey), true)
   })
 
   it('logins into an account', async () => {
-    await PeerAccount.login(orbitdb, address, rawKey)
+    await PeerAccount.login(orbitdb, dbAddr, rawKey)
   })
 })

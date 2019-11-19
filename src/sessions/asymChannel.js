@@ -13,7 +13,7 @@ const status = {
   FAILED: 'FAILED'
 }
 const setStatus = require('../utils').setStatus(status)
-const setLogOutputs = require('../utils').setLogOutput
+const setLogOutputs = require('../utils').setLogOutputs
 
 class AsymChannel extends Channel {
   constructor (db, offer, capability, options = {}) {
@@ -36,15 +36,27 @@ class AsymChannel extends Channel {
         const db = await this._state
         if (
           !db.options.meta ||
-          !AsymChannel.verifyOffer({
-            name: this.offer.name,
-            meta: db.options.meta
-          })
+          !AsymChannel.verifyOffer(
+            null,
+            {
+              name: this.offer.name,
+              meta: db.options.meta
+            }
+          )
         ) throw new Error('something is wrong with the db meta field')
         const { address, ...offer } = { ...this.offer, meta: db.options.meta }
         this._offer = offer
+        this._capability = await AsymChannel._genCapability(
+          this.offer.name,
+          {
+            identityProvider: this.options.identityProvider,
+            idKey: this.options.idKey,
+            curve: this.offer.meta.curve
+          }
+        )
       }
       this._state = await this._state
+      this.address = this._state.address
       this._supported = this.offer.meta.supported
       this.direction = this.offer.meta.owner.id === this.capability.id
         ? 'recipient' : 'sender'
@@ -83,12 +95,11 @@ class AsymChannel extends Channel {
   }
 
   static async verifyOffer (orbitdbC, offer) {
-    if (!orbitdbC) throw new Error('orbitdbC must be defined')
     if (!offer) throw new Error('offer must be defined')
     if (!offer.name || !offer.meta) return false
     if (OfferName.parse(offer.name).type !== this.type) return false
     const { meta } = offer
-    if (!meta.sessionType !== this.type) return false
+    if (meta.sessionType !== this.type) return false
     if (!meta.owner || !meta.lifetime || !meta.supported || !meta.curve) {
       return false
     }
@@ -194,17 +205,18 @@ class AsymChannel extends Channel {
         `offer type was ${offerName.type}, expected ${this.type}`
       )
     }
-    const offer = { name: offerName.name, address }
-    const capability = await this._genCapability(
-      offer.name,
+    const offer = { name: offerName.name, address: address.toString() }
+    const db = orbitdbC.openDb({ address: offer.address })
+    return new AsymChannel(
+      db,
+      offer,
+      null,
       {
+        log: options.log,
         identityProvider: orbitdbC._orbitdb.identity._provider,
-        idKey: options.idKey,
-        curve: offer.meta.curve
+        idKey: options.idKey
       }
     )
-    const db = orbitdbC.openDb({ address: this.offer.address })
-    return new AsymChannel(db, offer, capability, { log: options.log })
   }
 
   /* state methods */
@@ -215,13 +227,11 @@ class AsymChannel extends Channel {
     if (this.direction === 'recipient') {
       throw new Error('tried to send offer as owner')
     }
-    if (!this.isSupported(offer.type)) {
+    if (!offer.name) throw new Error('offer must have a name')
+    const offerName = OfferName.parse(offer.name)
+    if (!this.isSupported(offerName.type)) {
       throw new Error('unsupported session type')
     }
-    if (!offer.name) throw new Error('offer must have a name')
-    if (!OfferName.isValid(offer.name)) throw new Error('invalid offer name')
-
-    const offerId = OfferName.parse(offer.name).id
     if (!offer._channel) {
       offer._channel = {
         name: this.offer.name,
@@ -230,12 +240,10 @@ class AsymChannel extends Channel {
       }
     }
 
-    if (!this._isValidOffer(Date.now(), offer)) {
-      throw new Error('tried to send invalid offer')
-    }
-
+    const offerId = offerName.id
     if (await this.getOffer(offerId)) throw new Error('offer already exists!')
     const encryptedOffer = await this._encrypt(offer)
+
     return this._state.put({
       [this._state.options.indexBy]: offerId,
       id: offerId,
@@ -251,7 +259,10 @@ class AsymChannel extends Channel {
       if (!OfferName.isValidId(offerId)) throw new Error('invalid offerId')
       const op = await this._state.query(
         op =>
-          (this.direction === 'recipient' || op.id === this.capability.id) &&
+          (
+            this.direction === 'recipient' ||
+            op.identity.id === this.capability.id
+          ) &&
           op.payload.key === offerId &&
           op.payload.value.id === offerId &&
           op.payload.value.key &&
@@ -275,7 +286,10 @@ class AsymChannel extends Channel {
     const now = Date.now()
     const ops = await this._state.query(
       op =>
-        (this.direction === 'recipient' || op.id === this.capability.id) &&
+        (
+          this.direction === 'recipient' ||
+          op.identity.id === this.capability.id
+        ) &&
         OfferName.isValidId(op.payload.key) &&
         op.payload.key === op.payload.value.id &&
         op.payload.value.key &&

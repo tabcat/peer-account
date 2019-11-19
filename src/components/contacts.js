@@ -3,7 +3,7 @@
 const EventEmitter = require('events').EventEmitter
 const AsymChannel = require('../sessions/asymChannel')
 const Contact = require('../sessions/contact')
-const OfferName = require('./offerName')
+const OfferName = require('../sessions/offerName')
 
 const status = {
   PRE_INIT: 'PRE_INIT',
@@ -12,13 +12,18 @@ const status = {
   FAILED: 'FAILED'
 }
 const setStatus = require('../utils').setStatus(status)
-const setLogOutputs = require('../utils').setLogOutput
+const setLogOutputs = require('../utils').setLogOutputs
+
+const flatMap = (f, xs) =>
+  xs.reduce((acc, x) =>
+    acc.concat(f(x)), [])
 
 class Contacts {
-  constructor (orbitdbC, index, options = {}) {
-    if (!orbitdbC) throw new Error('account must be defined')
+  constructor (account, index, options = {}) {
+    if (!account) throw new Error('account must be defined')
     if (!index) throw new Error('index must be defined')
-    this._orbitdbC = orbitdbC
+    this._account = account
+    this._orbitdbC = account._orbitdbC
     this._index = index
     this.options = options
     this._contacts = {}
@@ -26,7 +31,7 @@ class Contacts {
     this.events = new EventEmitter()
     this.initialized = this._initialize()
     setStatus(this, status.PRE_INIT)
-    setLogOutputs(this, this.indexKey, options.log)
+    setLogOutputs(this, Contacts.indexKey, account.log)
     this.events.on('status', status => this.log(`status set to ${status}`))
     this.log('instance created')
   }
@@ -62,7 +67,7 @@ class Contacts {
     const contacts = new Contacts(
       account,
       await account.componentIndex(this.indexKey),
-      { log: account.log, load: options.load }
+      { load: options.load }
     )
     await contacts.initialized
     account[this.indexKey] = contacts
@@ -109,7 +114,7 @@ class Contacts {
           session: contact.toJSON()
         }
       )
-      this.log(`contact ${contact.offer.name} session field added to record`)
+      this.log(`contact ${contact.offer.name} complete record added`)
     })
 
     this._contacts = { ...this._contacts, [contact.offer.name]: contact }
@@ -134,7 +139,7 @@ class Contacts {
       )
     }
 
-    const contact = record.sessions
+    const contact = record.session
       ? await Contact.open(
         this._orbitdbC,
         record.session.offer,
@@ -203,10 +208,10 @@ class Contacts {
 
   async contactOffer (offerName) {
     if (!offerName) throw new Error('offerName must be defined')
-    const { name } = OfferName.parse(offerName)
+    const { id } = OfferName.parse(offerName)
     const offers = await Promise.all(
-      Object.values(this._channels)
-        .map(async (channel) => channel.getOffer(name))
+      Object.values(this.channels)
+        .map((channel) => channel.getOffer(id))
     ).then(arr => arr.filter(v => v))
     if (offers.length > 1) {
       throw new Error('more than one channel with that offer')
@@ -216,9 +221,9 @@ class Contacts {
 
   async contactOffers () {
     return Promise.all(
-      Object.values(this._channels)
-        .map(async (channel) => channel.getOffers())
-    ).then(arr => arr.flatMap(a => a))
+      Object.values(this.channels)
+        .map((channel) => channel.getOffers())
+    ).then(arrays => flatMap(a => a, arrays))
   }
 
   async acceptOffer (offerName, options = {}) {
@@ -230,7 +235,10 @@ class Contacts {
     const contact = await Contact.accept(
       this._orbitdbC,
       contactOffer,
-      { idKey: contactOffer._channel.name, log: this.log }
+      {
+        log: this.log,
+        handshake: { idKey: contactOffer._channel.name }
+      }
     )
     await this._index.set(
       contact.offer.name,

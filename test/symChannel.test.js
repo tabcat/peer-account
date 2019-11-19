@@ -5,7 +5,7 @@ const Ipfs = require('@tabcat/ipfs-bundle-t')
 const OrbitDB = require('orbit-db')
 const Identities = require('orbit-db-identity-provider')
 const OfferName = require('../src/sessions/offerName')
-const AsymChannel = require('../src/sessions/asymChannel')
+const SymChannel = require('../src/sessions/symChannel')
 const OrbitdbC = require('../src/orbitdbController')
 const rmrf = require('rimraf')
 const { timeout } = require('./utils/config')
@@ -19,10 +19,12 @@ const connectPeers = async (ipfs1, ipfs2) => {
 
 const supported = 'supported'
 
-describe('AsymChannel', function () {
+describe('SymChannel', function () {
   this.timeout(timeout)
 
-  let ipfs1, ipfs2, orbitdbC1, orbitdbC2, asymChannel1, asymChannel2
+  let ipfs1, ipfs2, orbitdbC1, orbitdbC2, symChannel1, symChannel2, identity2
+
+  const idKey2 = 'idKey2'
 
   before(async () => {
     rmrf.sync('./ipfs')
@@ -63,6 +65,10 @@ describe('AsymChannel', function () {
         }
       )
     )
+    identity2 = await SymChannel._identity(
+      idKey2,
+      orbitdbC2._orbitdb.identity._provider
+    )
     await connectPeers(ipfs1, ipfs2)
   })
 
@@ -73,76 +79,54 @@ describe('AsymChannel', function () {
     await ipfs2.stop()
   })
 
-  it('creates an asym channel offer and opens the instance', async () => {
-    asymChannel1 = await AsymChannel.offer(
+  it('creates an sym channel offer and opens the instance', async () => {
+    symChannel1 = await SymChannel.offer(
       orbitdbC1,
-      { supported: [supported] }
+      { supported: [supported], recipient: identity2.id }
     )
-    await asymChannel1.initialized
-    assert.strictEqual(asymChannel1.status, 'LISTENING')
-    assert.strictEqual(asymChannel1.direction, 'recipient')
-    assert.strictEqual((await asymChannel1.getOffers()).length, 0)
-    assert.deepStrictEqual(asymChannel1.supported, [supported])
-    assert.strictEqual(asymChannel1.isSupported(supported), true)
+    await symChannel1.initialized
+    assert.strictEqual(symChannel1.status, 'LISTENING')
+    assert.strictEqual((await symChannel1.getOffers()).length, 0)
+    assert.deepStrictEqual(symChannel1.supported, [supported])
+    assert.strictEqual(symChannel1.isSupported(supported), true)
   })
 
-  it('accepts an asym channel offer and opens the instance', async () => {
-    asymChannel2 = await AsymChannel.accept(orbitdbC2, asymChannel1.offer)
-    await asymChannel2.initialized
-    assert.strictEqual(asymChannel2.status, 'LISTENING')
-    assert.strictEqual(asymChannel2.direction, 'sender')
-    assert.strictEqual((await asymChannel2.getOffers()).length, 0)
-    assert.deepStrictEqual(asymChannel2.supported, [supported])
-    assert.strictEqual(asymChannel2.isSupported(supported), true)
-    assert.strictEqual(
-      asymChannel1._state.address.toString(),
-      asymChannel2._state.address.toString()
-    )
-  })
-
-  it('accepts an asym channel offer from address', async () => {
-    asymChannel2 = await AsymChannel.fromAddress(
+  it('accepts an sym channel offer and opens the instance', async () => {
+    symChannel2 = await SymChannel.accept(
       orbitdbC2,
-      asymChannel1.address
+      symChannel1.offer,
+      { idKey: idKey2 }
     )
-    await asymChannel2.initialized
-    assert.strictEqual(asymChannel2.status, 'LISTENING')
-    assert.strictEqual(asymChannel2.direction, 'sender')
-    assert.strictEqual((await asymChannel2.getOffers()).length, 0)
-    assert.deepStrictEqual(asymChannel2.supported, [supported])
-    assert.strictEqual(asymChannel2.isSupported(supported), true)
+    await symChannel2.initialized
+    assert.strictEqual(symChannel2.status, 'LISTENING')
+    assert.strictEqual((await symChannel2.getOffers()).length, 0)
+    assert.deepStrictEqual(symChannel2.supported, [supported])
+    assert.strictEqual(symChannel2.isSupported(supported), true)
     assert.strictEqual(
-      asymChannel1._state.address.toString(),
-      asymChannel2._state.address.toString()
+      symChannel1._state.address.toString(),
+      symChannel2._state.address.toString()
     )
   })
 
   it('rejects sending offer with unsupported type', async () => {
     const unsupported = 'unsupported'
     const { name } = OfferName.generate(unsupported)
-    await assert.rejects(asymChannel2.sendOffer({ name }))
-    assert.strictEqual(asymChannel2.isSupported(unsupported), false)
-    assert.strictEqual((await asymChannel2.getOffers()).length, 0)
-  })
-
-  it('rejects owner sending offer', async () => {
-    const { name } = OfferName.generate(supported)
-    await assert.rejects(asymChannel1.sendOffer({ name }))
-    assert.strictEqual(asymChannel1.isSupported(supported), true)
-    assert.strictEqual((await asymChannel2.getOffers()).length, 0)
+    await assert.rejects(symChannel2.sendOffer({ name }))
+    assert.strictEqual(symChannel2.isSupported(unsupported), false)
+    assert.strictEqual((await symChannel2.getOffers()).length, 0)
   })
 
   it('sends an offer with a supported type', async () => {
     const { name } = OfferName.generate(supported)
-    await asymChannel2.sendOffer({ name })
+    await symChannel2.sendOffer({ name })
     await new Promise(resolve => {
-      asymChannel1._state.events.once('replicated', resolve)
+      symChannel1._state.events.once('replicated', resolve)
     })
-    assert.strictEqual(asymChannel2.isSupported(supported), true)
-    assert.strictEqual((await asymChannel2.getOffers()).length, 1)
-    assert.strictEqual((await asymChannel1.getOffers()).length, 1)
-    assert.strictEqual(!!(await asymChannel2.getOffers())[0]._channel.timestamp, true)
-    assert.strictEqual(!!(await asymChannel1.getOffers())[0]._channel.timestamp, true)
+    assert.strictEqual(symChannel2.isSupported(supported), true)
+    assert.strictEqual((await symChannel2.getOffers()).length, 1)
+    assert.strictEqual((await symChannel1.getOffers()).length, 1)
+    assert.strictEqual(!!(await symChannel2.getOffers())[0]._channel.timestamp, true)
+    assert.strictEqual(!!(await symChannel1.getOffers())[0]._channel.timestamp, true)
   })
 
   describe('Offer Getters', function () {
@@ -151,9 +135,9 @@ describe('AsymChannel', function () {
     const unsupported = 'unsupported'
 
     before(async () => {
-      const entries = await asymChannel2._state.query(() => true)
+      const entries = await symChannel2._state.query(() => true)
       assert.strictEqual(entries.length, 1)
-      validOffer = await asymChannel2.getOffer(entries[0].id)
+      validOffer = await symChannel2.getOffer(entries[0].id)
       assert.notStrictEqual(validOffer, undefined)
       assert.strictEqual(
         OfferName.parse(validOffer.name).id,
@@ -167,35 +151,34 @@ describe('AsymChannel', function () {
           const offer = {
             name,
             _channel: {
-              name: asymChannel2.offer.name,
-              address: asymChannel2._state.address.toString(),
+              name: symChannel2.offer.name,
+              address: symChannel2._state.address.toString(),
               timestamp: v
             }
           }
           return {
-            [asymChannel2._state.options.indexBy]: id,
+            [symChannel2._state.options.indexBy]: id,
             id,
-            key: asymChannel2._capability.key,
-            cipherbytes: [...(await asymChannel2._encrypt(offer)).cipherbytes]
+            cipherbytes: [...(await symChannel2._encrypt(offer)).cipherbytes]
           }
         })
       )
       await customOffers.reduce(async (a, c) => {
-        return [...await a, await asymChannel2._state.put(c)]
+        return [...await a, await symChannel2._state.put(c)]
       }, Promise.resolve([]))
-      await asymChannel2._state.put({ _id: 'invalid' })
+      await symChannel2._state.put({ _id: 'invalid' })
       assert.strictEqual(
-        (await asymChannel2._state.query(() => true)).length,
+        (await symChannel2._state.query(() => true)).length,
         5
       )
     })
 
     it('get a valid offer by name', async () => {
       assert.deepStrictEqual(
-        await asymChannel2.getOffer(OfferName.parse(validOffer.name).id),
+        await symChannel2.getOffer(OfferName.parse(validOffer.name).id),
         validOffer
       )
-      const entries = await asymChannel2._state.query(() => true)
+      const entries = await symChannel2._state.query(() => true)
       const invalidOffers = entries.filter(e =>
         e.id &&
         e.id !== OfferName.parse(validOffer.name).id
@@ -203,19 +186,19 @@ describe('AsymChannel', function () {
       await Promise.all(
         invalidOffers.map(async (v) => {
           if (v.id) {
-            assert.strictEqual(await asymChannel2.getOffer(v.id), undefined)
+            assert.strictEqual(await symChannel2.getOffer(v.id), undefined)
           }
         })
       )
     })
 
     it('get all valid offers', async () => {
-      let offers = await asymChannel2.getOffers()
+      let offers = await symChannel2.getOffers()
       assert.strictEqual(offers.length, 1)
       assert.deepStrictEqual(offers[0], validOffer)
       const offerName = OfferName.generate(supported)
-      await asymChannel2.sendOffer({ type: supported, name: offerName.name })
-      offers = await asymChannel2.getOffers()
+      await symChannel2.sendOffer({ type: supported, name: offerName.name })
+      offers = await symChannel2.getOffers()
       assert.strictEqual(offers.length, 2)
       assert.strictEqual(
         offers[0].name === validOffer.name || offers[0].name === offerName.name,

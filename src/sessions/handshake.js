@@ -15,7 +15,7 @@ const status = {
   FAILED: 'FAILED'
 }
 const setStatus = require('../utils').setStatus(status)
-const setLogOutputs = require('../utils').setLogOutput
+const setLogOutputs = require('../utils').setLogOutputs
 
 const getIdKey = (offerName) => `idKey-${offerName}`
 
@@ -83,7 +83,7 @@ class Handshake extends Session {
     if (OfferName.parse(offer.name).type !== this.type) return false
     if (!offer.sender || !offer.recipient || !offer.meta) return false
     if (!offer.meta.sessionType || !offer.meta.curve) return false
-    if (!offer.meta.sessionType !== this.type) return false
+    if (offer.meta.sessionType !== this.type) return false
     return true
   }
 
@@ -97,7 +97,7 @@ class Handshake extends Session {
     const idKey = options.idKey || offerName.name
     const identity = await this._identity(idKey, options.identityProvider)
     const curve = options.curve || 'P-256'
-    const { key, jwk } = await crypto.ecdh.generate(curve)
+    const { key, jwk } = await crypto.ecdh.generateKey(curve)
     return { idKey, id: identity.id, key: [...key], jwk, curve }
   }
 
@@ -234,7 +234,6 @@ class Handshake extends Session {
   */
 
   async state () {
-    await this.initialized
     const state = await this._state.query(
       doc => doc[this._state.options.indexBy] === 'state'
     )[0]
@@ -337,7 +336,6 @@ class Handshake extends Session {
                 id: [...encryptedId.cipherbytes]
               }
             })
-            setStatus(this, status.CONFIRMED)
             this._pollState()
           }
           return
@@ -350,6 +348,7 @@ class Handshake extends Session {
         case status.CONFIRMED:
           this._state.events.removeListener('replicated', this._pollState)
           this._listening = false
+          setStatus(this, status.CONFIRMED)
           return
         default:
           throw new Error(`no case for status: ${state.status}`)
@@ -364,10 +363,10 @@ class Handshake extends Session {
   async _aesKey (state) {
     if (this._aes) return this._aes
     if (
-      this.status === status.PRE_INIT ||
-      (this.status === status.INIT && this.direction === 'sender')
+      state.status === status.PRE_INIT ||
+      (state.status === status.INIT && this.direction === 'sender')
     ) throw new Error('_aesKey called before state was prepared')
-    const ecdh = await crypto.ecdh.import(this.capability.jwk)
+    const ecdh = await crypto.ecdh.importKey(this.capability.jwk)
     const secret = await ecdh.genSharedKey(new Uint8Array(
       state[this.direction === 'recipient' ? 'sender' : 'recipient'].key
     ))
@@ -377,15 +376,15 @@ class Handshake extends Session {
       128 // key length
     )
     this._aes = aes
-    return aes
+    return this._aes
   }
 
   async _encrypt (json, iv, state) {
     try {
       const key = await this._aesKey(state)
-      return await key.encrypt(
+      return key.encrypt(
         crypto.util.str2ab(JSON.stringify(json)),
-        new Uint8Array(iv)
+        OfferName.parse(this.offer.name).iv
       )
     } catch (e) {
       this.log.error(e)
@@ -397,9 +396,9 @@ class Handshake extends Session {
       const key = await this._aesKey(state)
       const decrypted = await key.decrypt(
         new Uint8Array(cipherbytes),
-        new Uint8Array(iv)
+        OfferName.parse(this.offer.name).iv
       )
-      return JSON.parse(crypto.utils.ab2str(decrypted.buffer))
+      return JSON.parse(crypto.util.ab2str(decrypted.buffer))
     } catch (e) {
       this.log.error(e)
     }

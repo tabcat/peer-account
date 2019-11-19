@@ -7,7 +7,7 @@ const status = {
   CLOSED: 'CLOSED'
 }
 const setStatus = require('../utils').setStatus(status)
-const setLogOutputs = require('../utils').setLogOutput
+const setLogOutputs = require('../utils').setLogOutputs
 
 class Manifest {
   constructor (account, index) {
@@ -16,27 +16,26 @@ class Manifest {
     this._account = account
     this._orbitdbC = account._orbitdbC
     this._index = index
-    this._index._docstore.events.once('closed', () => {
-      setStatus(this, status.CLOSED)
-      this.log('orbitdb closed index')
-    })
     this.addAddr = this.addAddr.bind(this)
     this.delAddr = this.delAddr.bind(this)
     this.events = new EventEmitter()
     setStatus(this, status.OPEN)
-    setLogOutputs(this, this.indexKey, this._account.log)
+    setLogOutputs(this, Manifest.indexKey, this._account.log)
     this.events.on('status', status => this.log(`status set to ${status}`))
+    this._index._docstore.events.once('closed', () => {
+      setStatus(this, status.CLOSED)
+      this.log('orbitdb closed index')
+    })
     this.log('instance created')
   }
 
   static get indexKey () { return 'manifest' }
 
-  static async attatch (account) {
+  static async attach (account) {
     if (!account) throw new Error('account must be defined')
     const manifest =
       new Manifest(account, await account.componentIndex(this.indexKey))
     await manifest.addAddr(account._index._docstore.address.toString())
-    await manifest.addAddr(manifest._index._docstore.address.toString())
     account[this.indexKey] = manifest
   }
 
@@ -50,7 +49,7 @@ class Manifest {
       setStatus(this, status.OPEN)
       this.log('opened manifest')
     } else {
-      this.log(`manifest is not closed, status: ${this.status}`)
+      this.log(`tried to open already open manifest, status: ${this.status}`)
     }
   }
 
@@ -62,15 +61,15 @@ class Manifest {
       this.log.error(`exists(${address}), index is closed`)
       throw new Error('manifest closed')
     }
-    return this._index.match(address)
+    return !!await this._index.match(address)
   }
 
   async manifest () {
-    if (!this.status === status.CLOSED) {
+    if (this.status === status.CLOSED) {
       this.log.error('manifest(), index is closed')
       throw new Error('manifest closed')
     }
-    const docs = await this._index.query(() => true)
+    const docs = await this._index.query((doc) => !!doc.address)
     return docs.map(doc => doc.address)
   }
 
@@ -78,14 +77,17 @@ class Manifest {
     if (!this._orbitdbC.isValidAddress(address)) {
       throw new Error('address is invalid')
     }
-    if (!this.status === status.CLOSED) {
-      this.log.error(`addAddr(${address}), index is closed`)
-      throw new Error('manifest closed')
+    address = address.toString()
+    if (address === this._index._docstore.address.toString()) { return }
+    if (this.status === status.CLOSED) {
+      this.log.error(`failed to add ${address} to closed manifest`)
+      return
     }
     if (!await this._index.match(address)) {
-      await this._index.put(address, { address })
+      const addition = await this._index.set(address, { address })
       this.events.emit('add', address)
       this.log(`added ${address}`)
+      return addition
     } else {
       this.log(`address ${address} already added`)
     }
@@ -95,14 +97,17 @@ class Manifest {
     if (!this._orbitdbC.isValidAddress(address)) {
       throw new Error('address is invalid')
     }
-    if (!this.status === status.CLOSED) {
-      this.log.error(`delAddr(${address}), index is closed`)
-      throw new Error('manifest closed')
+    address = address.toString()
+    if (address === this._index._docstore.address.toString()) { return }
+    if (this.status === status.CLOSED) {
+      this.log.error(`failed to del ${address} from closed manifest`)
+      return
     }
     if (await this._index.match(address)) {
-      await this._index.del(address)
+      const deletion = await this._index.del(address)
       this.events.emit('del', address)
       this.log(`deleted ${address}`)
+      return deletion
     } else {
       this.log(`address ${address} does not exist to be deleted`)
     }

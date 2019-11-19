@@ -12,24 +12,25 @@ const status = {
   FAILED: 'FAILED'
 }
 const setStatus = require('../utils').setStatus(status)
-const setLogOutputs = require('../utils').setLogOutput
+const setLogOutputs = require('../utils').setLogOutputs
 
 class SymChannel extends Channel {
   constructor (db, offer, capability, options = {}) {
     super(db, offer, capability, options)
     this._aes = null
     this.events = new EventEmitter()
-    this.initialized = this._initialize()
     setStatus(this, status.PRE_INIT)
     setLogOutputs(this, SymChannel.type, options.log)
     this.events.on('status', status => this.log(`status set to ${status}`))
     this.log('instance created')
+    this.initialized = this._initialize()
   }
 
   async _initialize () {
     try {
       setStatus(this, status.INIT)
       this._state = await this._state
+      this._supported = this.offer.meta.supported
       this._state.events.on('replicated', () => this.events.emit('update'))
       this._state.events.on('write', () => this.events.emit('update'))
       setStatus(this, status.LISTENING)
@@ -52,7 +53,7 @@ class SymChannel extends Channel {
       throw new Error('missing required option fields to create offer')
     }
     const rawKey = await crypto.aes.exportKey(options.aesKey)
-    const keyCheck = await options.key.encrypt(
+    const keyCheck = await options.aesKey.encrypt(
       crypto.util.str2ab(this.type),
       offerName.iv
     )
@@ -78,11 +79,11 @@ class SymChannel extends Channel {
     const offerName = OfferName.parse(offer.name)
     if (offerName.type !== this.type) throw new Error('invalid offerName type')
     if (
-      !offer.sender || !offer.recipient || !offer.aes || !offer.meta
+      !offer.aes || !offer.sender || !offer.recipient || !offer.meta
     ) return false
     const { meta } = offer
     if (
-      meta.sessionType || meta.lifetime || meta.supported || meta.keyCheck
+      !meta.sessionType || !meta.lifetime || !meta.supported || !meta.keyCheck
     ) return false
     const key = await crypto.aes.importKey(new Uint8Array(offer.aes))
     return !!await key.decrypt(
@@ -96,7 +97,7 @@ class SymChannel extends Channel {
     offerName = OfferName.parse(offerName)
     if (offerName.type !== this.type) throw new Error('invalid offerName type')
     const idKey = options.idKey || offerName.name
-    const identity = await this._identity(idKey)
+    const identity = await this._identity(idKey, options.identityProvider)
     return { idKey, id: identity.id }
   }
 
@@ -138,7 +139,7 @@ class SymChannel extends Channel {
   static async offer (orbitdbC, options = {}) {
     if (!orbitdbC) throw new Error('orbitdbC must be defined')
     if (!options.recipient) throw new Error('recipient option must be defined')
-    const keyLen = options.keyLen || '128'
+    const keyLen = options.keyLen || 128
     const offerName = OfferName.generate(this.type)
     const capability = await this._genCapability(
       offerName,
@@ -150,7 +151,8 @@ class SymChannel extends Channel {
     const offer = await this._createOffer(
       offerName,
       {
-        key: options.key || await crypto.aes.generateKey(keyLen, this.type),
+        aesKey: options.aesKey ||
+          await crypto.aes.generateKey(keyLen, this.type),
         sender: capability.id,
         recipient: options.recipient,
         supported: options.supported
@@ -177,13 +179,11 @@ class SymChannel extends Channel {
   async sendOffer (offer) {
     await this.initialized
     if (!offer) throw new Error('offer must be defined')
-    if (!this._isSupported(offer.type)) {
+    if (!offer.name) throw new Error('offer must have a name')
+    const offerName = OfferName.parse(offer.name)
+    if (!this.isSupported(offerName.type)) {
       throw new Error('unsupported session type')
     }
-    if (!offer.name) throw new Error('offer must have a name')
-    if (!OfferName.isValid(offer.name)) throw new Error('invalid offer name')
-
-    const offerId = OfferName.parse(offer.name).id
     if (!offer._channel) {
       offer._channel = {
         name: this.offer.name,
@@ -192,12 +192,10 @@ class SymChannel extends Channel {
       }
     }
 
-    if (!this._isValidOffer(Date.now(), offer)) {
-      throw new Error('tried to send invalid offer')
-    }
-
+    const offerId = OfferName.parse(offer.name).id
     if (await this.getOffer(offerId)) throw new Error('offer already exists!')
     const encryptedOffer = await this._encrypt(offer)
+
     return this._state.put({
       [this._state.options.indexBy]: offerId,
       id: offerId,
@@ -259,7 +257,7 @@ class SymChannel extends Channel {
 
   async _aesKey () {
     if (this._aes) return this._aes
-    this._aes = await crypto.aes.importKey(this.capability.aes)
+    this._aes = await crypto.aes.importKey(this.offer.aes)
     return this._aes
   }
 

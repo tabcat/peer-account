@@ -47,6 +47,11 @@ describe('OfferName', function () {
     ].forEach(name => assert.strictEqual(OfferName.isValid(name), false))
   })
 
+  it('converts id to iv', () => {
+    const id = '245.60.64.252.155.248.180.196.255.251.52.51'
+    assert.deepStrictEqual(OfferName.idToIv(id), new Uint8Array(id.split('.')))
+  })
+
   describe('OfferName Instance', function () {
     let type, id, name, offerName
 

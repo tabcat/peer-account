@@ -105,6 +105,16 @@ describe('OrbitdbController', function () {
       })
     })
 
+    describe('isValidAddress', function () {
+      it('validates an orbitdb address', async () => {
+        assert.strictEqual(OrbitdbC.isValidAddress(orbitdb, address), true)
+      })
+
+      it('invalidates a non orbitdb address', async () => {
+        assert.strictEqual(OrbitdbC.isValidAddress(orbitdb, ''), false)
+      })
+    })
+
     describe('parseAddress', function () {
       it('parses an orbitdb address', async () => {
         dbAddr = OrbitDB.parseAddress(address)
@@ -132,6 +142,16 @@ describe('OrbitdbController', function () {
         const dbVector = { address }
         const dbAddr = await orbitdbC.dbAddr(dbVector)
         assert.strictEqual(dbAddr.toString(), address)
+      })
+    })
+
+    describe('isValidAddress', function () {
+      it('validates an orbitdb address', async () => {
+        assert.strictEqual(orbitdbC.isValidAddress(address), true)
+      })
+
+      it('invalidates a non orbitdb address', async () => {
+        assert.strictEqual(orbitdbC.isValidAddress(''), false)
       })
     })
 

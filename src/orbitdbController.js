@@ -1,12 +1,15 @@
 
 'use strict'
 const EventEmitter = require('events').EventEmitter
+const setLogOutputs = require('./utils').setLogOutputs
 
 class OrbitdbController {
-  constructor (orbitdb) {
+  constructor (orbitdb, log) {
     if (!orbitdb) throw new Error('orbitdb must be defined')
     this._orbitdb = orbitdb
     this.events = new EventEmitter()
+    if (log) setLogOutputs(this, 'orbitdbC', log)
+    else this.log = () => {}
   }
 
   static async _dbAddrFromConfig (orbitdb, config) {
@@ -70,13 +73,14 @@ class OrbitdbController {
 
   async openDb (dbVector, load = true) {
     if (!dbVector) throw new Error('dbVector must be defined')
-    const orbitdb = this._orbitdb
-    const dbAddr = this.dbAddr(dbVector)
-    if (orbitdb.stores[dbAddr.toString()]) {
-      return orbitdb.stores[dbAddr.toString()]
+    const dbAddr = await this.dbAddr(dbVector)
+    const address = dbAddr.toString()
+    if (this._orbitdb.stores[address]) {
+      return this._orbitdb.stores[address]
     }
     const db = await this._dbVector(dbVector, load)
-    this.events.emit('openDb', db.address.toString())
+    this.events.emit('openDb', address)
+    this.log(`opened ${address}`)
     return db
   }
 
@@ -85,6 +89,7 @@ class OrbitdbController {
     const db = await this._dbVector(dbVector, false)
     await db.close()
     this.events.emit('closeDb', db.address.toString())
+    this.log(`closed ${db.address.toString()}`)
   }
 
   async dropDb (dbVector) {
@@ -92,6 +97,7 @@ class OrbitdbController {
     const db = await this._dbVector(dbVector, false)
     await db.drop()
     this.events.emit('dropDb', db.address.toString())
+    this.log(`dropped ${db.address.toString()}`)
   }
 }
 

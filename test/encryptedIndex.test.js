@@ -11,7 +11,7 @@ const { timeout } = require('./utils/config')
 describe('EncryptedIndex', function () {
   this.timeout(timeout)
 
-  let ipfs, orbitdb, orbitdbC, address, aesKey
+  let ipfs, orbitdb, orbitdbC, dbAddr, aesKey
 
   before(async () => {
     rmrf.sync('./ipfs')
@@ -31,13 +31,13 @@ describe('EncryptedIndex', function () {
 
   it('generates a new encrypted index', async () => {
     const newIndex = await EncryptedIndex.generate(orbitdbC)
-    address = newIndex.address
+    dbAddr = newIndex.dbAddr
     aesKey = newIndex.aesKey
-    assert.strictEqual(await EncryptedIndex.keyCheck(address, aesKey), true)
+    assert.strictEqual(await EncryptedIndex.keyCheck(dbAddr, aesKey), true)
   })
 
   it('opens an encrypted index', async () => {
-    const index = await EncryptedIndex.open(orbitdbC, address, aesKey)
+    const index = await EncryptedIndex.open(orbitdbC, dbAddr, aesKey)
     assert.strictEqual(typeof index.match, 'function')
     assert.strictEqual(typeof index.set, 'function')
   })
@@ -46,7 +46,7 @@ describe('EncryptedIndex', function () {
     let index
 
     beforeEach(async () => {
-      index = await EncryptedIndex.open(orbitdbC, address, aesKey)
+      index = await EncryptedIndex.open(orbitdbC, dbAddr, aesKey)
     })
 
     afterEach(async () => {

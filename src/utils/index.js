@@ -13,22 +13,28 @@ const setStatus = (codes) => {
   }
 }
 
-const setLogOutputs = (self, scope, log) => {
-  if (!log) log = debug('')
-  self.log = log.extend(scope)
-  self.log.log = console.log.bind(console)
-  self.log.error = log.extend(`${scope}:error`)
-  self.log.error.log = console.error.bind(console)
-  debug.enable(`${scope}:error`)
+const setLogOutputs = (self, scope, log, id = '') => {
+  if (!log) {
+    self.log = debug(scope + id)
+    debug.enable(`${scope}*`)
+  } else {
+    self.log = log.extend(scope + id)
+  }
+  self.log.error = self.log.extend('error')
   if (self.events) {
-    self.log = (...p) => {
-      self.log(...p)
-      self.events.emit('debug', ...p)
+    self.log.log = (...p) => {
+      try {
+        self.events.emit('debug', ...p)
+      } catch (e) { console.error(e) }
     }
-    self.log.error = (...p) => {
-      self.log(...p)
-      self.events.emit('error', ...p)
+
+    self.log.error.log = (...p) => {
+      try {
+        self.events.emit('error', ...p)
+      } catch (e) { console.error(e) }
     }
+    // self.events.on('debug', console.log)
+    self.events.on('error', console.log)
   }
 }
 

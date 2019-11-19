@@ -13,36 +13,43 @@ const status = {
   FAILED: 'FAILED'
 }
 const setStatus = require('./utils').setStatus(status)
-const setLogOutputs = require('./utils').setLogOutput
+const setLogOutputs = require('./utils').setLogOutputs
 
 class PeerAccount {
-  constructor (orbitdbC, accountIndex, options = {}) {
-    if (!orbitdbC) throw new Error('orbitdbC must be defined')
+  constructor (orbitdb, accountIndex, options = {}) {
+    if (!orbitdb) throw new Error('orbitdb must be defined')
     if (!accountIndex) throw new Error('accountIndex must be defined')
-    this._orbitdbC = orbitdbC
     this._index = accountIndex
 
-    options = { ...options, components: { ...options.components } || {} }
+    // options = { ...options, components: { ...options.components } || {} }
     this.options = options
-    options.components = Object.keys(options.components)
-      .reduce((a, c) => ({ ...a, [c.indexKey]: c }), {})
-    if (
-      Object.keys(options.components).length !==
-      Object.keys(this.options.components).length
-    ) throw new Error('duplicate indexKey properties in optional components')
-    this.options.components = options.components
+    // options.components = Object.keys(options.components)
+    //   .reduce((a, c) => ({ ...a, [c.indexKey]: c }), {})
+    // if (
+    //   Object.keys(options.components).length !==
+    //   Object.keys(this.options.components).length
+    // ) throw new Error('duplicate indexKey properties in optional components')
+    // this.options.components = options.components
     this._components = {
       [Manifest.indexKey]: Manifest,
-      [Contacts.indexKey]: Contacts,
-      ...this.options.components
+      [Contacts.indexKey]: Contacts
+      // ...this.options.components
     }
 
     this.events = new EventEmitter()
-    this.initialized = this._initialize()
     setStatus(this, status.PRE_INIT)
-    setLogOutputs(this, `account-${this._index._docstore.address.root}`)
+    setLogOutputs(
+      this,
+      'account-',
+      null,
+      this._index._docstore.address.root.slice(-8)
+    )
+
+    this._orbitdbC = new OrbitdbController(orbitdb, this.log)
+
     this.events.on('status', status => this.log(`status set to ${status}`))
     this.log('instance created')
+    this.initialized = this._initialize()
   }
 
   async _initialize () {
@@ -53,7 +60,7 @@ class PeerAccount {
         this._components[Manifest.indexKey].indexKey === Manifest.indexKey
       ) {
         await this._components[Manifest.indexKey]
-          .attatch(this, this.options[Manifest.indexKey])
+          .attach(this, this.options[Manifest.indexKey])
         this.log(`${Manifest.indexKey} component attached`)
         this._orbitdbC.events.on('openDb', this[Manifest.indexKey].addAddr)
         this._orbitdbC.events.on('dropDb', this[Manifest.indexKey].delAddr)
@@ -63,28 +70,28 @@ class PeerAccount {
         this._components[Contacts.indexKey].indexKey === Contacts.indexKey
       ) {
         await this._components[Contacts.indexKey]
-          .attatch(this, this.options[Contacts.indexKey] || { load: true })
+          .attach(this, this.options[Contacts.indexKey] || { load: true })
         this.log(`${Contacts.indexKey} component attached`)
       }
-      await Promise.all([
-        Object.keys(this._components)
-          .filter((k, i, components) => {
-            if (typeof components[k].attach !== 'function') {
-              this.log.error(
-                `component ${k} has invalid attach property. component will not be attatched`
-              )
-              return false
-            }
-            if (
-              components[k].indexKey !== Manifest.indexKey &&
-              components[k].indexKey !== Contacts.indexKey
-            ) return true
-          })
-          .map(async (k) => {
-            await this._components[k].attach(this, this.options[k])
-            this.log(`${k} component attached`)
-          })
-      ])
+      // await Promise.all([
+      //   Object.keys(this._components)
+      //     .filter((k, i, components) => {
+      //       if (typeof components[k].attach !== 'function') {
+      //         this.log.error(
+      //           `component ${k} has invalid attach property. component will not be attatched`
+      //         )
+      //         return false
+      //       }
+      //       if (
+      //         components[k].indexKey !== Manifest.indexKey &&
+      //         components[k].indexKey !== Contacts.indexKey
+      //       ) return true
+      //     })
+      //     .map(async (k) => {
+      //       await this._components[k].attach(this, this.options[k])
+      //       this.log(`${k} component attached`)
+      //     })
+      // ])
       setStatus(this, status.READY)
       this.log('initialized')
     } catch (e) {
@@ -111,9 +118,6 @@ class PeerAccount {
       if (!rawKey) throw new Error('rawKey must be defined')
 
       const orbitdbC = new OrbitdbController(orbitdb)
-      if (!orbitdbC.parseAddress(address)) {
-        throw new Error('invalid orbitdb address')
-      }
       const dbAddr = orbitdbC.parseAddress(address)
       const aesKey = await Index.importKey(rawKey)
         .catch(e => {
@@ -131,7 +135,7 @@ class PeerAccount {
           throw new Error('failed to open component index')
         })
 
-      return new PeerAccount(orbitdbC, accountIndex)
+      return new PeerAccount(orbitdb, accountIndex)
     } catch (e) {
       console.error(e)
       throw new Error('account login failed')
