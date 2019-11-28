@@ -1,5 +1,5 @@
 {
-  "name": "peer-account",
+  "name": "@tabcat/peer-account",
   "version": "0.0.1",
   "description": "agent for self-sovereign, private account stores",
   "main": "src/index.js",
