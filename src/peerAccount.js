@@ -2,8 +2,8 @@
 'use strict'
 const OrbitdbController = require('./orbitdbController')
 const Index = require('./encryptedIndex')
-const Contacts = require('./components/contacts')
 const Manifest = require('./components/manifest')
+const Contacts = require('./components/contacts')
 const EventEmitter = require('events').EventEmitter
 
 const status = {
@@ -15,26 +15,16 @@ const status = {
 const setStatus = require('./utils').setStatus(status)
 const setLogOutputs = require('./utils').setLogOutputs
 
+const components = [Manifest, Contacts]
+
 class PeerAccount {
   constructor (orbitdb, accountIndex, options = {}) {
     if (!orbitdb) throw new Error('orbitdb must be defined')
     if (!accountIndex) throw new Error('accountIndex must be defined')
     this._index = accountIndex
-
-    // options = { ...options, components: { ...options.components } || {} }
+    this.root = this._index._docstore.address.root
     this.options = options
-    // options.components = Object.keys(options.components)
-    //   .reduce((a, c) => ({ ...a, [c.indexKey]: c }), {})
-    // if (
-    //   Object.keys(options.components).length !==
-    //   Object.keys(this.options.components).length
-    // ) throw new Error('duplicate indexKey properties in optional components')
-    // this.options.components = options.components
-    this._components = {
-      [Manifest.indexKey]: Manifest,
-      [Contacts.indexKey]: Contacts
-      // ...this.options.components
-    }
+    this._components = components.reduce((a, c) => ({ ...a, [c.indexKey]: c }))
 
     this.events = new EventEmitter()
     setStatus(this, status.PRE_INIT)
@@ -42,7 +32,7 @@ class PeerAccount {
       this,
       'account-',
       null,
-      this._index._docstore.address.root.slice(-8)
+      this.root.slice(-8)
     )
 
     this._orbitdbC = new OrbitdbController(orbitdb, this.log)
@@ -55,43 +45,11 @@ class PeerAccount {
   async _initialize () {
     try {
       setStatus(this, status.INIT)
-      if (
-        this._components[Manifest.indexKey] &&
-        this._components[Manifest.indexKey].indexKey === Manifest.indexKey
-      ) {
-        await this._components[Manifest.indexKey]
-          .attach(this, this.options[Manifest.indexKey])
-        this.log(`${Manifest.indexKey} component attached`)
-        this._orbitdbC.events.on('openDb', this[Manifest.indexKey].addAddr)
-        this._orbitdbC.events.on('dropDb', this[Manifest.indexKey].delAddr)
-      }
-      if (
-        this._components[Contacts.indexKey] &&
-        this._components[Contacts.indexKey].indexKey === Contacts.indexKey
-      ) {
-        await this._components[Contacts.indexKey]
-          .attach(this, this.options[Contacts.indexKey] || { load: true })
-        this.log(`${Contacts.indexKey} component attached`)
-      }
-      // await Promise.all([
-      //   Object.keys(this._components)
-      //     .filter((k, i, components) => {
-      //       if (typeof components[k].attach !== 'function') {
-      //         this.log.error(
-      //           `component ${k} has invalid attach property. component will not be attatched`
-      //         )
-      //         return false
-      //       }
-      //       if (
-      //         components[k].indexKey !== Manifest.indexKey &&
-      //         components[k].indexKey !== Contacts.indexKey
-      //       ) return true
-      //     })
-      //     .map(async (k) => {
-      //       await this._components[k].attach(this, this.options[k])
-      //       this.log(`${k} component attached`)
-      //     })
-      // ])
+      await components.reduce(async (a, c) => {
+        await a
+        await c.attach(this, this.options[c.indexKey])
+        this.log(`attached component ${c.indexKey}`)
+      }, Promise.resolve())
       setStatus(this, status.READY)
       this.log('initialized')
     } catch (e) {

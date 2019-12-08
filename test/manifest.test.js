@@ -121,11 +121,4 @@ describe('Manifest Component', function () {
   it('fails to say if non-address exists in manifest', async () => {
     assert.rejects(account.manifest.exists(nonAddress))
   })
-
-  it('reopens manifest', async () => {
-    await account.manifest._index._docstore.close()
-    assert.strictEqual(account.manifest.status === 'CLOSED', true)
-    await account.manifest.open()
-    assert.strictEqual(account.manifest.status === 'OPEN', true)
-  })
 })

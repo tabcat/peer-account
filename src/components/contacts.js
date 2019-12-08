@@ -1,6 +1,6 @@
 
 'use strict'
-const EventEmitter = require('events').EventEmitter
+const Component = require('./component')
 const AsymChannel = require('../sessions/asymChannel')
 const Contact = require('../sessions/contact')
 const OfferName = require('../sessions/offerName')
@@ -12,34 +12,23 @@ const status = {
   FAILED: 'FAILED'
 }
 const setStatus = require('../utils').setStatus(status)
-const setLogOutputs = require('../utils').setLogOutputs
 
 const flatMap = (f, xs) =>
   xs.reduce((acc, x) =>
     acc.concat(f(x)), [])
 
-class Contacts {
-  constructor (account, index, options = {}) {
-    if (!account) throw new Error('account must be defined')
-    if (!index) throw new Error('index must be defined')
-    this._account = account
-    this._orbitdbC = account._orbitdbC
-    this._index = index
-    this.options = options
+class Contacts extends Component {
+  constructor (account, index, options) {
+    super(account, index, options)
     this._contacts = {}
     this._channels = {}
-    this.events = new EventEmitter()
     this.initialized = this._initialize()
-    setStatus(this, status.PRE_INIT)
-    setLogOutputs(this, Contacts.indexKey, account.log)
-    this.events.on('status', status => this.log(`status set to ${status}`))
-    this.log('instance created')
   }
 
   async _initialize () {
     try {
       setStatus(this, status.INIT)
-      if (this.options.load) {
+      if (this.options.load || this.options.load === undefined) {
         await Promise.all([
           this._getRecords(Contact.type)
             .then(docs => Promise.all(
@@ -61,17 +50,6 @@ class Contacts {
   }
 
   static get indexKey () { return 'contacts' }
-
-  static async attach (account, options) {
-    if (!account) throw new Error('account must be defined')
-    const contacts = new Contacts(
-      account,
-      await account.componentIndex(this.indexKey),
-      { load: options.load }
-    )
-    await contacts.initialized
-    account[this.indexKey] = contacts
-  }
 
   async addContact (channelAddress, options = {}) {
     await this.initialized
