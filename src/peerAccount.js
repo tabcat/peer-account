@@ -4,6 +4,7 @@ const OrbitdbController = require('./orbitdbController')
 const Index = require('./encryptedIndex')
 const Manifest = require('./components/manifest')
 const Contacts = require('./components/contacts')
+const Profile = require('./components/profile')
 const EventEmitter = require('events').EventEmitter
 
 const status = {
@@ -15,7 +16,7 @@ const status = {
 const setStatus = require('./utils').setStatus(status)
 const setLogOutputs = require('./utils').setLogOutputs
 
-const components = [Manifest, Contacts]
+const components = [Manifest, Contacts, Profile]
 
 class PeerAccount {
   constructor (orbitdb, accountIndex, options = {}) {
