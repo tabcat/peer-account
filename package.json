@@ -25,7 +25,7 @@
     "rimraf": "^3.0.0"
   },
   "dependencies": {
-    "@tabcat/encrypted-docstore": "^3.0.1",
+    "@tabcat/encrypted-docstore": "^3.0.3",
     "@tabcat/peer-account-crypto": "0.0.3"
   }
 }
