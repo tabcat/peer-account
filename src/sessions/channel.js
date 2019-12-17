@@ -1,7 +1,7 @@
 
 'use strict'
-const Session = require('./session')
-const OfferName = require('./offerName')
+const Session = require('../session')
+const OfferName = require('../offerName')
 
 class Channel extends Session {
   constructor (db, offer, capability, options = {}) {

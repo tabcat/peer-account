@@ -1,6 +1,6 @@
 
 'use strict'
-const Channel = require('../channel')
+const Channel = require('./channel')
 const OfferName = require('../offerName')
 const crypto = require('@tabcat/peer-account-crypto')
 
