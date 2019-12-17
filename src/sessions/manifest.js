@@ -1,41 +1,130 @@
 
 'use strict'
+const Session = require('../session')
+const Index = require('../encryptedIndex')
+const OfferName = require('../offerName')
+const crypto = require('@tabcat/peer-account-crypto')
 
-class Manifest {
-  constructor (index) {
-    if (!index) throw new Error('index must be defined')
-    this._index = index
-    this.open = true
+const status = {
+  INIT: 'INIT',
+  READY: 'READY',
+  CLOSED: 'CLOSED',
+  FAILED: 'FAILED'
+}
+const setStatus = require('../utils').setStatus(status)
+
+const manifestClosed = () => new Error('manifest closed')
+
+class Manifest extends Session {
+  constructor (orbitdbC, offer, capability, options) {
+    super(orbitdbC, offer, capability, options)
     this.addAddr = this.addAddr.bind(this)
     this.delAddr = this.delAddr.bind(this)
-    this._index._docstore.events.on('closed', function () {
-      this.open = false
-    }.bind(this))
+    this._orbitdbC.events.on('openDb', this.addAddr)
+    this._orbitdbC.events.on('dropDb', this.delAddr)
+    this._state._docstore.events.once('closed', () => {
+      setStatus(this, status.CLOSED)
+      this.log('orbitdb closed index')
+      this._orbitdbC.events.removeListener('openDb', this.addAddr)
+      this._orbitdbC.events.removeListener('dropDb', this.delAddr)
+    })
+    this.initialized = this._initialize()
   }
 
-  static get indexKey () { return 'manifest' }
+  async _initialize () {
+    try {
+      setStatus(this, status.INIT)
+      const aesKey = Index.importKey(this.offer.rawKey)
+      const dbAddr = await Index.determineAddress(
+        this._orbitdbC,
+        {
+          name: this.offer.name,
+          options: {
+            ...this.options,
+            identity: await this._identity(
+              this.capability.idKey,
+              this._orbitdbC._orbitdb.identity._provider
+            ),
+            accessController: {
+              write: [this.offer.meta.owner.id]
+            },
+            meta: this.offer.meta
+          }
+        },
+        aesKey
+      )
+      this._state = await Index.open(this._orbitdbC, dbAddr, aesKey)
+      setStatus(this, status.READY)
+    } catch (e) {
+      setStatus(this, status.FAILED)
+      this.log.error(e)
+      this.log.error('failed initialization')
+    }
+  }
+
+  static get type () { return 'manifest' }
 
   async exists (address) {
-    return this._index.match(address)
+    await this.initialized
+    if (!this._orbitdbC.isValidAddress(address)) {
+      throw new Error('address is invalid')
+    }
+    if (!this.status === status.CLOSED) {
+      this.log.error(`exists(${address}): failed, index is closed`)
+      throw manifestClosed()
+    }
+    return Boolean(await this._state.match(address))
   }
 
   async manifest () {
-    if (!this.open) throw new Error('manifest index is closed')
-    return this._index.query(() => true)
-      .then(docs => docs.map(doc => doc.address))
+    await this.initialized
+    if (this.status === status.CLOSED) {
+      this.log.error('manifest(): failed, manifest is closed')
+      throw manifestClosed()
+    }
+    const docs = await this._state.query((doc) => Boolean(doc.address))
+    return docs.map(doc => doc.address)
   }
 
   async addAddr (address) {
-    if (!this.open) throw new Error('manifest index is closed')
-    if (!await this.exists(address)) {
-      return this._index.put(address, { address })
+    await this.initialized
+    address = address.toString()
+    if (!this._orbitdbC.isValidAddress(address)) {
+      throw new Error(`addAddr(${address}): address is invalid`)
+    }
+    if (address === this._state._docstore.address.toString()) { return }
+    if (this.status === status.CLOSED) {
+      this.log.error(`addAddr(${address}): failed, manifest is closed`)
+      throw manifestClosed()
+    }
+    if (!await this._state.match(address)) {
+      const addition = await this._state.set(address, { address })
+      this.events.emit('add', address)
+      this.log(`added ${address}`)
+      return addition
+    } else {
+      this.log(`addAddr(${address}): address already exists`)
     }
   }
 
   async delAddr (address) {
-    if (!this.open) throw new Error('manifest index is closed')
-    if (await this.exists(address)) {
-      return this._index.del(address)
+    await this.initialized
+    address = address.toString()
+    if (!this._orbitdbC.isValidAddress(address)) {
+      throw new Error(`delAddr(${address}): address is invalid`)
+    }
+    if (address === this._state._docstore.address.toString()) { return }
+    if (this.status === status.CLOSED) {
+      this.log.error(`delAddr(${address}): failed, index is closed`)
+      throw manifestClosed()
+    }
+    if (await this._state.match(address)) {
+      const deletion = await this._state.del(address)
+      this.events.emit('del', address)
+      this.log(`deleted ${address}`)
+      return deletion
+    } else {
+      this.log(`delAddr(${address}): address does not exist`)
     }
   }
 }

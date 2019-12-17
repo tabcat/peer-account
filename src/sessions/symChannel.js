@@ -1,8 +1,7 @@
 
 'use strict'
-const Channel = require('./channel')
-const OfferName = require('./offerName')
-const EventEmitter = require('events').EventEmitter
+const Channel = require('../channel')
+const OfferName = require('../offerName')
 const crypto = require('@tabcat/peer-account-crypto')
 
 const status = {
@@ -12,24 +11,31 @@ const status = {
   FAILED: 'FAILED'
 }
 const setStatus = require('../utils').setStatus(status)
-const setLogOutputs = require('../utils').setLogOutputs
 
 class SymChannel extends Channel {
-  constructor (db, offer, capability, options = {}) {
-    super(db, offer, capability, options)
+  constructor (orbitdbC, offer, capability, options = {}) {
+    super(orbitdbC, offer, capability, options)
     this._aes = null
-    this.events = new EventEmitter()
-    setStatus(this, status.PRE_INIT)
-    setLogOutputs(this, SymChannel.type, options.log)
-    this.events.on('status', status => this.log(`status set to ${status}`))
-    this.log('instance created')
     this.initialized = this._initialize()
   }
 
   async _initialize () {
     try {
       setStatus(this, status.INIT)
-      this._state = await this._state
+      this._state = await this._orbitdbC.openDb({
+        name: this.offer.name,
+        type: 'docstore',
+        options: {
+          identity: await this.constructor._identity(
+            this.capability.idKey,
+            this._orbitdbC._orbitdb.identity._provider
+          ),
+          accessController: {
+            write: [this.offer.sender, this.offer.recipient]
+          },
+          meta: this.offer.meta
+        }
+      })
       this._supported = this.offer.meta.supported
       this._state.events.on('replicated', () => this.events.emit('update'))
       this._state.events.on('write', () => this.events.emit('update'))
@@ -40,28 +46,26 @@ class SymChannel extends Channel {
     }
   }
 
-  // session type
   static get type () { return 'sym_channel' }
 
-  /* persistence methods */
-
-  static async _createOffer (offerName, options = {}) {
-    if (!offerName) throw new Error('offerName must be defined')
-    offerName = OfferName.parse(offerName)
-    if (offerName.type !== this.type) throw new Error('invalid offerName type')
-    if (!options.aesKey || !options.sender || !options.recipient) {
-      throw new Error('missing required option fields to create offer')
+  static async createOffer (capability, options = {}) {
+    if (!this.verifyCapability(capability)) {
+      throw new Error('invalid capability')
     }
-    const rawKey = await crypto.aes.exportKey(options.aesKey)
-    const keyCheck = await options.aesKey.encrypt(
+    if (!options.recipient) {
+      throw new Error('options.recipient must be defined')
+    }
+
+    const aesKey = await crypto.aes.importKey(capability.aes)
+    const keyCheck = await aesKey.encrypt(
       crypto.util.str2ab(this.type),
-      offerName.iv
+      OfferName.parse(capability.name).iv
     )
 
     return {
-      name: offerName.name,
-      aes: [...rawKey],
-      sender: options.sender,
+      name: capability.name,
+      aes: capability.aes,
+      sender: options.sender || capability.id,
       recipient: options.recipient,
       meta: {
         sessionType: this.type,
@@ -72,12 +76,10 @@ class SymChannel extends Channel {
     }
   }
 
-  static async verifyOffer (orbitdbC, offer) {
-    if (!orbitdbC) throw new Error('orbitdbC must be defined')
+  static async verifyOffer (offer) {
     if (!offer) throw new Error('offer must be defined')
-    if (!offer.name) return false
-    const offerName = OfferName.parse(offer.name)
-    if (offerName.type !== this.type) throw new Error('invalid offerName type')
+    if (!offer.name || !OfferName.isValid(offer.name)) return false
+    if (OfferName.parse(offer.name).type !== this.type) return false
     if (
       !offer.aes || !offer.sender || !offer.recipient || !offer.meta
     ) return false
@@ -86,95 +88,46 @@ class SymChannel extends Channel {
       !meta.sessionType || !meta.lifetime || !meta.supported || !meta.keyCheck
     ) return false
     const key = await crypto.aes.importKey(new Uint8Array(offer.aes))
-    return !!await key.decrypt(
-      new Uint8Array(offer.meta.keyCheck),
-      offerName.iv
-    ).catch(e => { console.log(e); return false })
+    return Boolean(
+      await key.decrypt(
+        new Uint8Array(offer.meta.keyCheck),
+        OfferName.parse(offer.name).iv
+      ).catch(e => {
+        console.error(e)
+        console.error('offer failed keyCheck')
+        return false
+      })
+    )
   }
 
-  static async _genCapability (offerName, options = {}) {
-    if (!offerName) throw new Error('offerName must be defined')
-    offerName = OfferName.parse(offerName)
-    if (offerName.type !== this.type) throw new Error('invalid offerName type')
-    const idKey = options.idKey || offerName.name
+  static async createCapability (options = {}) {
+    if (!options.identityProvider) {
+      throw new Error('options.identityProvider must be defined')
+    }
+    const fromOffer = options.offer && await this.verifyOffer(options.offer)
+
+    const name = fromOffer
+      ? options.offer.name
+      : options.name || OfferName.generate(this.type).toString()
+    const aesKey = fromOffer
+      ? await crypto.aes.importKey(options.offer.aes)
+      : options.aesKey || await crypto.aes.generateKey(options.keyLen || 128)
+
+    const idKey = options.idKey || name
     const identity = await this._identity(idKey, options.identityProvider)
-    return { idKey, id: identity.id }
+    const rawKey = await crypto.aes.exportKey(aesKey)
+
+    return { name, idKey, id: identity.id, aes: [...rawKey] }
   }
 
   static async verifyCapability (capability) {
     if (!capability) throw new Error('capability must be defined')
+    if (!capability.name || !OfferName.isValid(capability.name)) return false
+    if (OfferName.parse(capability.name).type !== this.type) return false
     if (!capability.idKey || !capability.id) return false
+    if (!capability.aes) return false
     return true
   }
-
-  /* factory methods */
-
-  static async open (orbitdbC, offer, capability, options = {}) {
-    if (!orbitdbC) throw new Error('orbitdbC must be defined')
-    if (!offer) throw new Error('offer must be defined')
-    if (!capability) throw new Error('capability must be defined')
-    if (!await this.verifyOffer(orbitdbC, offer)) {
-      throw new Error(`tried to open ${this.type} session with invalid offer`)
-    }
-    if (!await this.verifyCapability(capability)) {
-      throw new Error(
-        `tried to open ${this.type} session with invalid capability`
-      )
-    }
-    const db = orbitdbC.openDb({
-      name: offer.name,
-      type: 'docstore',
-      options: {
-        identity: await this._identity(
-          capability.idKey,
-          orbitdbC._orbitdb.identity._provider
-        ),
-        accessController: { write: [offer.sender, offer.recipient] },
-        meta: offer.meta
-      }
-    })
-    return new SymChannel(db, offer, capability, { log: options.log })
-  }
-
-  static async offer (orbitdbC, options = {}) {
-    if (!orbitdbC) throw new Error('orbitdbC must be defined')
-    if (!options.recipient) throw new Error('recipient option must be defined')
-    const keyLen = options.keyLen || 128
-    const offerName = OfferName.generate(this.type)
-    const capability = await this._genCapability(
-      offerName,
-      {
-        identityProvider: orbitdbC._orbitdb.identity._provider,
-        idKey: options.idKey
-      }
-    )
-    const offer = await this._createOffer(
-      offerName,
-      {
-        aesKey: options.aesKey ||
-          await crypto.aes.generateKey(keyLen, this.type),
-        sender: capability.id,
-        recipient: options.recipient,
-        supported: options.supported
-      }
-    )
-    return this.open(orbitdbC, offer, capability, { log: options.log })
-  }
-
-  static async accept (orbitdbC, offer, options = {}) {
-    if (!orbitdbC) throw new Error('orbitdbC must be defined')
-    if (!offer) throw new Error('offer must be defined')
-    const capability = await this._genCapability(
-      offer.name,
-      {
-        identityProvider: orbitdbC._orbitdb.identity._provider,
-        idKey: options.idKey
-      }
-    )
-    return this.open(orbitdbC, offer, capability, { log: options.log })
-  }
-
-  /* state methods */
 
   async sendOffer (offer) {
     await this.initialized
@@ -252,8 +205,6 @@ class SymChannel extends Channel {
       })
     ).then(offers => offers.filter(offer => offer))
   }
-
-  /* encryption methods */
 
   async _aesKey () {
     if (this._aes) return this._aes

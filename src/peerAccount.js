@@ -4,7 +4,7 @@ const OrbitdbController = require('./orbitdbController')
 const Index = require('./encryptedIndex')
 const Manifest = require('./components/manifest')
 const Contacts = require('./components/contacts')
-const Profile = require('./components/profile')
+const Profiles = require('./components/profiles')
 const EventEmitter = require('events').EventEmitter
 
 const status = {
@@ -16,25 +16,20 @@ const status = {
 const setStatus = require('./utils').setStatus(status)
 const setLogOutputs = require('./utils').setLogOutputs
 
-const components = [Manifest, Contacts, Profile]
+const components = [Manifest, Contacts]
 
 class PeerAccount {
   constructor (orbitdb, accountIndex, options = {}) {
     if (!orbitdb) throw new Error('orbitdb must be defined')
     if (!accountIndex) throw new Error('accountIndex must be defined')
-    this._index = accountIndex
-    this.root = this._index._docstore.address.root
+    this._accountIndex = accountIndex
+    this.root = this._accountIndex._docstore.address.root
     this.options = options
-    this._components = components.reduce((a, c) => ({ ...a, [c.indexKey]: c }))
+    this._components = components.reduce((a, c) => ({ ...a, [c.type]: c }))
 
     this.events = new EventEmitter()
     setStatus(this, status.PRE_INIT)
-    setLogOutputs(
-      this,
-      'account-',
-      null,
-      this.root.slice(-8)
-    )
+    setLogOutputs(this, 'account-', null, this.root.slice(-8))
 
     this._orbitdbC = new OrbitdbController(orbitdb, this.log)
 
@@ -46,11 +41,47 @@ class PeerAccount {
   async _initialize () {
     try {
       setStatus(this, status.INIT)
+      const duplicates =
+        new Set(components.map(v => v.type)).size !== components.length
+      if (duplicates) throw new Error('duplicate component types')
+
       await components.reduce(async (a, c) => {
         await a
-        await c.attach(this, this.options[c.indexKey])
-        this.log(`attached component ${c.indexKey}`)
+        const doc = await this._accountIndex.match(c.type)
+        const componentOptions = {
+          ...(this.options[c.type] || {}),
+          log: this.log
+        }
+
+        const component = doc
+          // open the existing component session
+          ? await c.open(
+            this._orbitdbC,
+            doc.offer,
+            doc.capability,
+            componentOptions
+          ).catch(e => {
+            this.log.error(e)
+            throw new Error('failed to open existing component session')
+          })
+          // generate the component session
+          : await c.offer(this._orbitdbC, componentOptions)
+            .catch(e => {
+              this.log.error(e)
+              throw new Error('failed to create component session')
+            })
+
+        await component.initialized
+        if (component.status === 'FAILED') {
+          throw new Error(`component ${c.type} failed to attach`)
+        }
+
+        if (!doc) await this._accountIndex.set(c.type, component.toJSON())
+        this[c.type] = component
+        this.log(`attached component ${c.type}`)
       }, Promise.resolve())
+
+      await this[Manifest.type].addAddr(this._accountIndex._docstore.address)
       setStatus(this, status.READY)
       this.log('initialized')
     } catch (e) {
@@ -60,17 +91,33 @@ class PeerAccount {
     }
   }
 
-  // create a new accountIndex
+  /*
+    this will return a unique account index everytime and is used
+    when creating a new account.
+    the account index is used to store the address of the component state
+    to the component type.
+    the account index is a wrapped orbitdb docstore.
+    the component state address is an orbitdb address.
+
+    orbitdb is an instance of https://github.com/orbitdb/orbit-db
+  */
   static async genAccountIndex (orbitdb) {
     if (!orbitdb) throw new Error('orbitdb must be defined')
-    return Index.generate(new OrbitdbController(orbitdb))
+    return Index.generate(
+      new OrbitdbController(orbitdb)
+    )
       .catch(e => {
         console.error(e)
         throw new Error('failed generating new account index')
       })
   }
 
-  static async login (orbitdb, address, rawKey) {
+  /*
+    peerAccount factory method.
+    address is the orbitdb address of the account index.
+    rawKey is a raw decryption key.
+  */
+  static async login (orbitdb, address, rawKey, options) {
     try {
       if (!orbitdb) throw new Error('orbitdb must be defined')
       if (!address) throw new Error('address must be defined')
@@ -88,68 +135,18 @@ class PeerAccount {
         console.error('key check failed on login')
         throw new Error(`invalid account address '${address}' or rawKey`)
       }
+
       const accountIndex = await Index.open(orbitdbC, dbAddr, aesKey)
         .catch(e => {
           console.error(e)
-          throw new Error('failed to open component index')
+          throw new Error('failed to open account index')
         })
 
-      return new PeerAccount(orbitdb, accountIndex)
+      return new PeerAccount(orbitdb, accountIndex, options)
     } catch (e) {
       console.error(e)
       throw new Error('account login failed')
     }
-  }
-
-  get components () { return Object.keys(this._components) }
-
-  async componentIndex (indexKey, options = {}) {
-    if (!indexKey) throw new Error('indexKey must be defined')
-    indexKey = `component-${indexKey}`
-    const doc = await this._index.match(indexKey)
-
-    if (doc) {
-      const key = await Index.importKey(new Uint8Array(doc.rawKey))
-        .catch(e => {
-          this.log.error(e)
-          this.log.error(`component ${indexKey} key import failed`)
-          throw new Error('failed to import component rawKey')
-        })
-      this.log(`component ${indexKey} key import successful`)
-      if (!this._orbitdbC.parseAddress(doc.address)) {
-        this.log.error(`component ${indexKey} has invalid address recorded`)
-        throw new Error(`invalid component address: ${doc.address}`)
-      }
-      const dbAddr = await this._orbitdbC.parseAddress(doc.address)
-      return Index.open(this._orbitdbC, dbAddr, key)
-        .catch(e => {
-          this.log.error(e)
-          this.log.error(`failed to mount component ${indexKey} index`)
-          throw new Error('failed to open component index')
-        })
-    }
-
-    const { index, dbAddr, rawKey } =
-      await Index.generate(this._orbitdbC, options)
-        .catch(e => {
-          this.log.error(e)
-          this.log.error(`failed to generate index for component ${indexKey}`)
-          throw new Error('failed index generation')
-        })
-    await this._index.set(
-      indexKey,
-      {
-        indexKey,
-        address: dbAddr.toString(),
-        rawKey: [...rawKey]
-      }
-    )
-    this.log(`added component ${indexKey} record to account index`)
-    if (this[Manifest.indexKey]) {
-      await this[Manifest.indexKey].addAddr(dbAddr.toString())
-      this.log(`added component ${indexKey} index address to manifest`)
-    }
-    return index
   }
 }
 

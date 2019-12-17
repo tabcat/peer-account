@@ -1,8 +1,7 @@
 
 'use strict'
-const Session = require('./session')
-const OfferName = require('./offerName')
-const EventEmitter = require('events').EventEmitter
+const Session = require('../session')
+const OfferName = require('../offerName')
 const crypto = require('@tabcat/peer-account-crypto')
 
 const status = {
@@ -15,9 +14,8 @@ const status = {
   FAILED: 'FAILED'
 }
 const setStatus = require('../utils').setStatus(status)
-const setLogOutputs = require('../utils').setLogOutputs
 
-const getIdKey = (offerName) => `idKey-${offerName}`
+const idKey = (offerName) => `idKey-${offerName}`
 
 /*
   the goal of Handshake is to securely:
@@ -26,27 +24,33 @@ const getIdKey = (offerName) => `idKey-${offerName}`
 */
 
 class Handshake extends Session {
-  constructor (db, offer, capability, options = {}) {
-    super(db, offer, capability, options)
-    if (!options.identityProvider) {
-      throw new Error('options.identityProvider required')
-    }
-    this._identityProvider = options.identityProvider
+  constructor (orbitdbC, offer, capability, options = {}) {
+    super(orbitdbC, offer, capability, options)
+    this._identityProvider = options.identityProvider ||
+      this._orbitdbC._orbitdb.identity._provider
     this.direction = offer.recipient === capability.id ? 'recipient' : 'sender'
     this._listening = false
     this._pollState = this._pollState.bind(this)
-    this.events = new EventEmitter()
     this.initialized = this._initialize()
-    setStatus(this, status.PRE_INIT)
-    setLogOutputs(this, Handshake.type, options.log)
-    this.events.on('status', status => this.log(`status set to ${status}`))
-    this.log('instance created')
   }
 
   async _initialize () {
     try {
       setStatus(this, status.INIT)
-      this._state = await this._state
+      this._state = await this._orbitdbC.openDb({
+        name: this.offer.name,
+        type: 'docstore',
+        options: {
+          identity: await this.constructor._identity(
+            this.capability.idKey,
+            this._identityProvider
+          ),
+          accessController: {
+            write: [this.offer.sender, this.offer.recipient]
+          },
+          meta: this.offer.meta
+        }
+      })
       setStatus(this, await this.state().then(s => s.status))
       if (this.options.start) this.start()
     } catch (e) {
@@ -55,31 +59,27 @@ class Handshake extends Session {
     }
   }
 
-  // session type
   static get type () { return 'handshake' }
 
-  /* persistence methods */
-
-  static async _createOffer (offerName, options = {}) {
-    if (!offerName) throw new Error('offerName must be defined')
-    offerName = OfferName.parse(offerName)
-    if (offerName.type !== this.type) throw new Error('invalid offerName type')
-    if (!options.sender || !options.recipient || !options.curve) {
-      throw new Error('missing required option fields to create offer')
+  static async createOffer (capability, options = {}) {
+    if (!await this.verifyCapability(capability)) {
+      throw new Error('invalid capability')
+    }
+    if (!options.recipient) {
+      throw new Error('options.recipient must be defined')
     }
 
     return {
-      name: offerName.name,
-      sender: options.sender,
+      name: capability.name,
+      sender: options.sender || capability.id,
       recipient: options.recipient,
-      meta: { sessionType: this.type, curve: options.curve }
+      meta: { sessionType: this.type, curve: capability.curve }
     }
   }
 
-  static async verifyOffer (orbitdbC, offer) {
-    if (!orbitdbC) throw new Error('orbitdbC must be defined')
+  static async verifyOffer (offer) {
     if (!offer) throw new Error('offer must be defined')
-    if (!offer.name) return false
+    if (!offer.name || !OfferName.isValid(offer.name)) return false
     if (OfferName.parse(offer.name).type !== this.type) return false
     if (!offer.sender || !offer.recipient || !offer.meta) return false
     if (!offer.meta.sessionType || !offer.meta.curve) return false
@@ -87,129 +87,36 @@ class Handshake extends Session {
     return true
   }
 
-  static async _genCapability (offerName, options = {}) {
-    if (!offerName) throw new Error('offerName must be defined')
-    offerName = OfferName.parse(offerName)
-    if (offerName.type !== this.type) throw new Error('invalid offerName type')
+  static async createCapability (options = {}) {
     if (!options.identityProvider) {
       throw new Error('options.identityProvider must be defined')
     }
-    const idKey = options.idKey || offerName.name
+    const fromOffer = options.offer && await this.verifyOffer(options.offer)
+
+    const name = fromOffer
+      ? options.offer.name
+      : options.name || OfferName.generate(this.type).toString()
+    const curve = fromOffer
+      ? options.offer.meta.curve
+      : options.curve || 'P-256'
+
+    const idKey = options.idKey || name
     const identity = await this._identity(idKey, options.identityProvider)
-    const curve = options.curve || 'P-256'
     const { key, jwk } = await crypto.ecdh.generateKey(curve)
-    return { idKey, id: identity.id, key: [...key], jwk, curve }
+
+    return { name, idKey, id: identity.id, key: [...key], jwk, curve }
   }
 
   static async verifyCapability (capability) {
     if (!capability) throw new Error('capability must be defined')
+    if (!capability.name || !OfferName.isValid(capability.name)) return false
+    if (OfferName.parse(capability.name).type !== this.type) return false
     if (
       !capability.idKey || !capability.id || !capability.key ||
       !capability.jwk || !capability.curve
     ) return false
     return true
   }
-
-  /* factory methods */
-
-  static async open (orbitdbC, offer, capability, options = {}) {
-    if (!orbitdbC) throw new Error('orbitdbC must be defined')
-    if (!offer) throw new Error('offer must be defined')
-    if (!capability) throw new Error('capability must be defined')
-    if (!await this.verifyOffer(orbitdbC, offer)) {
-      throw new Error(`tried to open ${this.type} session with invalid offer`)
-    }
-    if (!await this.verifyCapability(capability)) {
-      throw new Error(
-        `tried to open ${this.type} session with invalid capability`
-      )
-    }
-    const db = orbitdbC.openDb({
-      name: offer.name,
-      type: 'docstore',
-      options: {
-        identity: await this._identity(
-          capability.idKey,
-          orbitdbC._orbitdb.identity._provider
-        ),
-        accessController: { write: [offer.sender, offer.recipient] },
-        meta: offer.meta
-      }
-    })
-    return new Handshake(
-      db,
-      offer,
-      capability,
-      {
-        log: options.log,
-        identityProvider: orbitdbC._orbitdb.identity._provider
-      }
-    )
-  }
-
-  static async offer (orbitdbC, options = {}) {
-    if (!orbitdbC) throw new Error('orbitdbC must be defined')
-    if (!options.recipient) throw new Error('options.recipeint is required')
-    const offerName = OfferName.generate(this.type)
-    const capability = await this._genCapability(
-      offerName,
-      {
-        identityProvider: orbitdbC._orbitdb.identity._provider,
-        idKey: options.idKey,
-        curve: options.curve
-      }
-    )
-    const offer = await this._createOffer(
-      offerName,
-      {
-        sender: capability.id,
-        recipient: options.recipient,
-        curve: capability.curve
-      }
-    )
-    return this.open(
-      orbitdbC,
-      offer,
-      capability,
-      {
-        log: options.log,
-        identityProvider: orbitdbC._orbitdb.identity._provider
-      }
-    )
-  }
-
-  static async accept (orbitdbC, offer, options = {}) {
-    if (!orbitdbC) throw new Error('orbitdbC must be defined')
-    if (!offer) throw new Error('offer must be defined')
-    const capability = await this._genCapability(
-      offer.name,
-      {
-        identityProvider: orbitdbC._orbitdb.identity._provider,
-        idKey: options.idKey,
-        curve: offer.meta.curve
-      }
-    )
-    return this.open(
-      orbitdbC,
-      offer,
-      capability,
-      {
-        log: options.log,
-        identityProvider: orbitdbC._orbitdb.identity._provider
-      }
-    )
-  }
-
-  // static async decline (orbitdbC, offer, options) {
-  //   const capability = await this._genCapability(offer, options)
-  //   const handshake = await this.open(orbitdbC, offer, capability, options)
-  //   return handshake._state.put({
-  //     [handshake._state.options.indexBy]: 'state',
-  //     status: status.DECLINED
-  //   })
-  // }
-
-  /* state methods */
 
   async start () {
     await this.initialized
@@ -223,14 +130,15 @@ class Handshake extends Session {
     final state:
     {
       status: 'CONFIRMED',
-      // id's are encrypted in this._state docstore
-      // id's are returned decrypted in this.state if status is complete
-      // aes does not exist in this._state docstore
-      // aes is returned by this.state only when complete
       sender: { id, key, idKey },
       recipient: { id, key, idKey },
-      aes: [<raw aes key>] // calculated from completed state
+      aes: <raw aes key> // calculated from completed state, its a json array
     }
+
+    id's are encrypted in this._state docstore
+    id's are returned decrypted in this.state if status is complete
+    aes does not exist in this._state docstore
+    aes is returned by this.state only when complete
   */
 
   async state () {
@@ -264,7 +172,7 @@ class Handshake extends Session {
           )
         },
         aes: [...await crypto.aes.exportKey(await this._aesKey(state))],
-        idKey: getIdKey(this.offer.name)
+        idKey: idKey(this.offer.name)
       }
     } else return state
   }
@@ -295,7 +203,7 @@ class Handshake extends Session {
           }
           if (this.direction === 'recipient') {
             const identity = await Handshake._identity(
-              getIdKey(this.offer.name),
+              idKey(this.offer.name),
               this._identityProvider
             )
             const encryptedId = await this._encrypt(
@@ -320,7 +228,7 @@ class Handshake extends Session {
           ) throw new Error(`invalid ${status.ACCEPTED} state: ${state}`)
           if (this.direction === 'sender') {
             const identity = await Handshake._identity(
-              getIdKey(this.offer.name),
+              idKey(this.offer.name),
               this._identityProvider
             )
             const encryptedId = await this._encrypt(
@@ -357,8 +265,6 @@ class Handshake extends Session {
       this.log.error(e)
     }
   }
-
-  /* encryption methods */
 
   async _aesKey (state) {
     if (this._aes) return this._aes

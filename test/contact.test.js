@@ -6,7 +6,7 @@ const OrbitDB = require('orbit-db')
 const Identities = require('orbit-db-identity-provider')
 const Contact = require('../src/sessions/contact')
 const AsymChannel = require('../src/sessions/asymChannel')
-const OfferName = require('../src/sessions/offerName')
+const OfferName = require('../src/offerName')
 const OrbitdbC = require('../src/orbitdbController')
 const rmrf = require('rimraf')
 const { timeout } = require('./utils/config')
@@ -18,7 +18,7 @@ const connectPeers = async (ipfs1, ipfs2) => {
   await ipfs2.swarm.connect(id1.addresses[0])
 }
 
-describe('Contact', function () {
+describe('Contact Session', function () {
   this.timeout(timeout)
 
   let ipfs1, ipfs2, orbitdbC1, orbitdbC2, contact1, contact2, identity2
@@ -97,13 +97,13 @@ describe('Contact', function () {
     )
     await Promise.all([contact1.initialized, contact2.initialized])
     assert.strictEqual(contact2.status, 'READY')
-    assert.notStrictEqual(
+    assert.strictEqual(
       contact1._state._docstore.address.toString(),
       contact2._state._docstore.address.toString()
     )
     assert.strictEqual(
-      contact1._channel._state.address.toString(),
-      contact2._channel._state.address.toString()
+      contact1.channel._state.address.toString(),
+      contact2.channel._state.address.toString()
     )
   })
 
@@ -129,13 +129,13 @@ describe('Contact', function () {
       { handshake: { idKey: asymChannel1.capability.idKey } }
     )
     await Promise.all([contact1.initialized, contact2.initialized])
-    assert.notStrictEqual(
+    assert.strictEqual(
       contact1._state._docstore.address.toString(),
       contact2._state._docstore.address.toString()
     )
     assert.strictEqual(
-      contact1._channel._state.address.toString(),
-      contact2._channel._state.address.toString()
+      contact1.channel._state.address.toString(),
+      contact2.channel._state.address.toString()
     )
   })
 })

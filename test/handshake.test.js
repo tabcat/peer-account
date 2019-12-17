@@ -16,7 +16,7 @@ const connectPeers = async (ipfs1, ipfs2) => {
   await ipfs2.swarm.connect(id1.addresses[0])
 }
 
-describe('Handshake', function () {
+describe('Handshake Session', function () {
   this.timeout(timeout)
 
   let ipfs1, ipfs2, orbitdbC1, orbitdbC2, handshake1, handshake2, identity2

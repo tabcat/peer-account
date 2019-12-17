@@ -1,9 +1,10 @@
 
 'use strict'
-const Component = require('./component')
+const Component = require('../component')
+const Index = require('../encryptedIndex')
 const AsymChannel = require('../sessions/asymChannel')
 const Contact = require('../sessions/contact')
-const OfferName = require('../sessions/offerName')
+const OfferName = require('../offerName')
 
 const status = {
   PRE_INIT: 'PRE_INIT',
@@ -18,8 +19,8 @@ const flatMap = (f, xs) =>
     acc.concat(f(x)), [])
 
 class Contacts extends Component {
-  constructor (account, index, options) {
-    super(account, index, options)
+  constructor (orbitdbC, offer, capability, options) {
+    super(orbitdbC, offer, capability, options)
     this._contacts = {}
     this._channels = {}
     this.initialized = this._initialize()
@@ -28,7 +29,36 @@ class Contacts extends Component {
   async _initialize () {
     try {
       setStatus(this, status.INIT)
-      if (this.options.load || this.options.load === undefined) {
+      const aesKey = await Index.importKey(this.offer.aes)
+      const dbAddr = await Index.determineAddress(
+        this._orbitdbC._orbitdb,
+        {
+          name: this.offer.name,
+          options: {
+            ...this.options,
+            accessController: {
+              write: [this.offer.meta.owner.id]
+            },
+            meta: this.offer.meta
+          }
+        },
+        aesKey
+      )
+      this._state = await Index.open(
+        this._orbitdbC,
+        dbAddr,
+        aesKey,
+        {
+          identity: await this.constructor._identity(
+            this.capability.idKey,
+            this._orbitdbC._orbitdb.identity._provider
+          )
+        }
+      )
+
+      console.log(dbAddr.toString())
+
+      if (this.options.load !== false) {
         await Promise.all([
           this._getRecords(Contact.type)
             .then(docs => Promise.all(
@@ -41,16 +71,28 @@ class Contacts extends Component {
             ))
         ])
       }
+
       setStatus(this, status.READY)
     } catch (e) {
       this.log.error(e)
       setStatus(this, status.FAILED)
-      throw new Error(`${Contacts.indexKey} failed initialization`)
+      throw new Error(`${Contacts.type} failed initialization`)
     }
   }
 
-  static get indexKey () { return 'contacts' }
+  static get type () { return 'contacts' }
 
+  /*
+    add a contact from an address of one of their channels for accepting
+    contact offers.
+    options.info is info to provide about yourself, like the address of your
+    profile, with the contact offer. the owner of the channel recieving the
+    contact offer can read the info and decide if they want to
+    accept the offer.
+    options.meta here is used to store information about the contact its
+    sending the offer to. this could be anything the user wants like a name
+    and other things that could be used to query the contact records.
+  */
   async addContact (channelAddress, options = {}) {
     await this.initialized
     if (!channelAddress) throw new Error('channelAddress must be defined')
@@ -64,7 +106,7 @@ class Contacts extends Component {
       channelAddress,
       { log: this.log, info: options.info }
     )
-    await this._index.set(
+    await this._setRecord(
       contact.offer.name,
       {
         name: contact.offer.name,
@@ -76,7 +118,7 @@ class Contacts extends Component {
     )
     this.log(`contact ${contact.offer.name} partial record added`)
 
-    // persist offer and capability
+    // persist offer and capability when ready
     contact.events.once('status:CHECK_HANDSHAKE', async () => {
       const record = await this._matchRecord(contact.offer.name)
       if (!record) {
@@ -85,7 +127,7 @@ class Contacts extends Component {
         )
         return
       }
-      await this._index.set(
+      await this._setRecord(
         contact.offer.name,
         {
           ...record,
@@ -108,7 +150,9 @@ class Contacts extends Component {
         `offerName type must be '${Contact.type}' but was '${type}'`
       )
     }
+
     if (this._contacts[name]) return this._contacts[name]
+
     const record = await this._matchRecord(name)
     if (!record) throw new Error(`no record for contact ${name}`)
     if (!record.channelAddress && !record.session) {
@@ -134,7 +178,7 @@ class Contacts extends Component {
     return this._contacts[name]
   }
 
-  async closeContact () {}
+  // async closeContact () {}
 
   async createChannel (options = {}) {
     await this.initialized
@@ -142,7 +186,8 @@ class Contacts extends Component {
       this._orbitdbC,
       { supported: [Contact.type], log: this.log }
     )
-    await this._index.set(
+    await AsymChannel.initialized
+    await this._setRecord(
       channel.offer.name,
       {
         name: channel.offer.name,
@@ -167,8 +212,12 @@ class Contacts extends Component {
       )
     }
     if (this._channels[name]) return this._channels[name]
+
     const channelRecord = await this._matchRecord(name)
     if (!channelRecord) throw new Error('no record')
+    if (!channelRecord.session) {
+      throw new Error('channel record missing session field')
+    }
 
     const { session } = channelRecord
     const channel = await AsymChannel.open(
@@ -182,7 +231,7 @@ class Contacts extends Component {
     return this._channels[name]
   }
 
-  async closeChannel () {}
+  // async closeChannel () {}
 
   async contactOffer (offerName) {
     if (!offerName) throw new Error('offerName must be defined')
@@ -192,7 +241,7 @@ class Contacts extends Component {
         .map((channel) => channel.getOffer(id))
     ).then(arr => arr.filter(v => v))
     if (offers.length > 1) {
-      throw new Error('more than one channel with that offer')
+      this.log.error('more than one channel with that offer')
     }
     return offers[0]
   }
@@ -218,7 +267,8 @@ class Contacts extends Component {
         handshake: { idKey: contactOffer._channel.name }
       }
     )
-    await this._index.set(
+    await contact.initialized
+    await this._setRecord(
       contact.offer.name,
       {
         name: contact.offer.name,
@@ -240,30 +290,14 @@ class Contacts extends Component {
   get channels () { return this._channels }
 
   async queryContacts (mapper) {
-    if (typeof mapper !== 'function') {
-      throw new Error('mapper must be type function')
-    }
-    const records = await this._getRecords(Contact.type)
-    return records.filter(mapper)
+    return this._queryRecords(mapper)
   }
 
   async queryChannels (mapper) {
-    if (typeof mapper !== 'function') {
-      throw new Error('mapper must be type function')
-    }
-    const records = await this._getRecords(AsymChannel.type)
-    return records.filter(mapper)
+    return this._queryRecords(mapper)
   }
 
   // async declineRequest (requestId, options) {}
-
-  async _matchRecord (recordId = '') {
-    return this._index.match(recordId)
-  }
-
-  async _getRecords (recordType) {
-    return this._index.get(recordType)
-  }
 }
 
 module.exports = Contacts

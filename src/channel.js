@@ -6,20 +6,26 @@ const OfferName = require('./offerName')
 class Channel extends Session {
   constructor (db, offer, capability, options = {}) {
     super(db, offer, capability, options)
+    // array of session 'type' properties supported by the channel
     this._supported = []
   }
 
-  /* state methods */
+  static get type () { return 'channel' }
 
   get supported () { return this._supported }
 
   isSupported (type) {
-    return this.supported.includes(type)
+    return this.supported.includes(type) || this.supported.includes('*')
   }
 
-  async sendOffer (offer) {}
+  /*
+    offers are never seen as 'accepted' or 'declined' from the view of the
+    channel they were sent in.
+    instead a sender sees whether an offer they sent was accepted by seeing
+    the recipient join the session within a timeout period they set.
+  */
 
-  // async consumeOffer (offerName) {}
+  async sendOffer (offer) {}
 
   async getOffer (offerName) {}
 

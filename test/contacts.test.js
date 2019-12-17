@@ -16,7 +16,7 @@ const connectPeers = async (ipfs1, ipfs2) => {
 }
 
 describe('Contacts Component', function () {
-  this.timeout(timeout)
+  this.timeout(100000)
 
   let ipfs1, ipfs2, orbitdb1, orbitdb2, index1, index2, account1, account2
 
@@ -91,7 +91,7 @@ describe('Contacts Component', function () {
     )
     assert.strictEqual(channel1.isSupported('contact'), true)
     assert.strictEqual(
-      !!account1.contacts._matchRecord(channel1.offer.name),
+      !!await account1.contacts._matchRecord(channel1.offer.name),
       true
     )
   })
@@ -113,7 +113,7 @@ describe('Contacts Component', function () {
       contact2
     )
     assert.strictEqual(
-      !!account2.contacts._matchRecord(contact2.offer.name),
+      !!await account2.contacts._matchRecord(contact2.offer.name),
       true
     )
     await new Promise(resolve => {
@@ -138,13 +138,7 @@ describe('Contacts Component', function () {
       contact2.offer.name,
       { meta: contactName }
     )
-    await new Promise((resolve, reject) => {
-      contact1.events.on('status:FAILED', reject)
-      contact1.events.once('status:READY', () => {
-        contact1.events.removeListener('status:FAILED', reject)
-        resolve()
-      })
-    })
+    assert.strictEqual(contact1.status, 'READY')
     assert.strictEqual(
       account1.contacts.contacts[contact1.offer.name],
       contact1

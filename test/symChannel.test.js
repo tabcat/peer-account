@@ -4,7 +4,7 @@ const assert = require('assert')
 const Ipfs = require('@tabcat/ipfs-bundle-t')
 const OrbitDB = require('orbit-db')
 const Identities = require('orbit-db-identity-provider')
-const OfferName = require('../src/sessions/offerName')
+const OfferName = require('../src/offerName')
 const SymChannel = require('../src/sessions/symChannel')
 const OrbitdbC = require('../src/orbitdbController')
 const rmrf = require('rimraf')
@@ -19,7 +19,7 @@ const connectPeers = async (ipfs1, ipfs2) => {
 
 const supported = 'supported'
 
-describe('SymChannel', function () {
+describe('SymChannel Session', function () {
   this.timeout(timeout)
 
   let ipfs1, ipfs2, orbitdbC1, orbitdbC2, symChannel1, symChannel2, identity2
