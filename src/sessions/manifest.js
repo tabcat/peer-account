@@ -2,7 +2,7 @@
 'use strict'
 const Session = require('../session')
 const Index = require('../encryptedIndex')
-const OfferName = require('../offerName')
+const SessionName = require('../sessionName')
 const crypto = require('@tabcat/peer-account-crypto')
 
 const status = {

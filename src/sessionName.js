@@ -2,10 +2,10 @@
 'use strict'
 const { randomBytes } = require('@tabcat/peer-account-crypto')
 
-const id = (offerName) => offerName.split('-')[1]
+const id = (sessionName) => sessionName.split('-')[1]
 const iv = (id) => new Uint8Array(id.split('.'))
 
-class OfferName {
+class SessionName {
   constructor (offerType, id) {
     this._type = offerType
     this._id = id
@@ -42,7 +42,7 @@ class OfferName {
         use an underscore '_'
         `)
     }
-    return new OfferName(type, randomBytes(12).join('.'))
+    return new SessionName(type, randomBytes(12).join('.'))
   }
 
   static parse (name) {
@@ -54,7 +54,7 @@ class OfferName {
       throw new Error('could not parse invalid offer name')
     }
     const [type, id] = name.toString().split('-')
-    return new OfferName(type, id)
+    return new SessionName(type, id)
   }
 
   static isValid (name) {
@@ -85,4 +85,4 @@ class OfferName {
   static idToIv (id) { return iv(id) }
 }
 
-module.exports = OfferName
+module.exports = SessionName

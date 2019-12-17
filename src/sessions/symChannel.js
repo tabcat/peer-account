@@ -1,7 +1,7 @@
 
 'use strict'
 const Channel = require('./channel')
-const OfferName = require('../offerName')
+const SessionName = require('../sessionName')
 const crypto = require('@tabcat/peer-account-crypto')
 
 const status = {
@@ -59,7 +59,7 @@ class SymChannel extends Channel {
     const aesKey = await crypto.aes.importKey(capability.aes)
     const keyCheck = await aesKey.encrypt(
       crypto.util.str2ab(this.type),
-      OfferName.parse(capability.name).iv
+      SessionName.parse(capability.name).iv
     )
 
     return {
@@ -78,8 +78,8 @@ class SymChannel extends Channel {
 
   static async verifyOffer (offer) {
     if (!offer) throw new Error('offer must be defined')
-    if (!offer.name || !OfferName.isValid(offer.name)) return false
-    if (OfferName.parse(offer.name).type !== this.type) return false
+    if (!offer.name || !SessionName.isValid(offer.name)) return false
+    if (SessionName.parse(offer.name).type !== this.type) return false
     if (
       !offer.aes || !offer.sender || !offer.recipient || !offer.meta
     ) return false
@@ -91,7 +91,7 @@ class SymChannel extends Channel {
     return Boolean(
       await key.decrypt(
         new Uint8Array(offer.meta.keyCheck),
-        OfferName.parse(offer.name).iv
+        SessionName.parse(offer.name).iv
       ).catch(e => {
         console.error(e)
         console.error('offer failed keyCheck')
@@ -108,7 +108,7 @@ class SymChannel extends Channel {
 
     const name = fromOffer
       ? options.offer.name
-      : options.name || OfferName.generate(this.type).toString()
+      : options.name || SessionName.generate(this.type).toString()
     const aesKey = fromOffer
       ? await crypto.aes.importKey(options.offer.aes)
       : options.aesKey || await crypto.aes.generateKey(options.keyLen || 128)
@@ -122,8 +122,8 @@ class SymChannel extends Channel {
 
   static async verifyCapability (capability) {
     if (!capability) throw new Error('capability must be defined')
-    if (!capability.name || !OfferName.isValid(capability.name)) return false
-    if (OfferName.parse(capability.name).type !== this.type) return false
+    if (!capability.name || !SessionName.isValid(capability.name)) return false
+    if (SessionName.parse(capability.name).type !== this.type) return false
     if (!capability.idKey || !capability.id) return false
     if (!capability.aes) return false
     return true
@@ -133,8 +133,8 @@ class SymChannel extends Channel {
     await this.initialized
     if (!offer) throw new Error('offer must be defined')
     if (!offer.name) throw new Error('offer must have a name')
-    const offerName = OfferName.parse(offer.name)
-    if (!this.isSupported(offerName.type)) {
+    const sessionName = SessionName.parse(offer.name)
+    if (!this.isSupported(sessionName.type)) {
       throw new Error('unsupported session type')
     }
     if (!offer._channel) {
@@ -145,7 +145,7 @@ class SymChannel extends Channel {
       }
     }
 
-    const offerId = OfferName.parse(offer.name).id
+    const offerId = SessionName.parse(offer.name).id
     if (await this.getOffer(offerId)) throw new Error('offer already exists!')
     const encryptedOffer = await this._encrypt(offer)
 
@@ -160,7 +160,7 @@ class SymChannel extends Channel {
     try {
       await this.initialized
       if (!offerId) throw new Error('offerId must be defined')
-      if (!OfferName.isValidId(offerId)) throw new Error('invalid offerId')
+      if (!SessionName.isValidId(offerId)) throw new Error('invalid offerId')
       const op = await this._state.query(
         op =>
           op.payload.key === offerId &&
@@ -185,7 +185,7 @@ class SymChannel extends Channel {
     const now = Date.now()
     const ops = await this._state.query(
       op =>
-        OfferName.isValidId(op.payload.key) &&
+        SessionName.isValidId(op.payload.key) &&
         op.payload.key === op.payload.value.id &&
         op.payload.value.cipherbytes,
       { fullOp: true }
@@ -217,7 +217,7 @@ class SymChannel extends Channel {
       const key = await this._aesKey()
       return key.encrypt(
         crypto.util.str2ab(JSON.stringify(offer)),
-        OfferName.parse(offer.name).iv
+        SessionName.parse(offer.name).iv
       )
     } catch (e) {
       this.log.error(e)
@@ -229,7 +229,7 @@ class SymChannel extends Channel {
       const key = await this._aesKey()
       const decrypted = await key.decrypt(
         new Uint8Array(encOffer.cipherbytes),
-        OfferName.idToIv(encOffer.id)
+        SessionName.idToIv(encOffer.id)
       )
       return JSON.parse(crypto.util.ab2str(decrypted.buffer))
     } catch (e) {

@@ -1,7 +1,7 @@
 
 'use strict'
 const Session = require('../session')
-const OfferName = require('../offerName')
+const SessionName = require('../sessionName')
 const crypto = require('@tabcat/peer-account-crypto')
 
 const status = {
@@ -15,7 +15,7 @@ const status = {
 }
 const setStatus = require('../utils').setStatus(status)
 
-const idKey = (offerName) => `idKey-${offerName}`
+const idKey = (sessionName) => `idKey-${sessionName}`
 
 /*
   the goal of Handshake is to securely:
@@ -79,8 +79,8 @@ class Handshake extends Session {
 
   static async verifyOffer (offer) {
     if (!offer) throw new Error('offer must be defined')
-    if (!offer.name || !OfferName.isValid(offer.name)) return false
-    if (OfferName.parse(offer.name).type !== this.type) return false
+    if (!offer.name || !SessionName.isValid(offer.name)) return false
+    if (SessionName.parse(offer.name).type !== this.type) return false
     if (!offer.sender || !offer.recipient || !offer.meta) return false
     if (!offer.meta.sessionType || !offer.meta.curve) return false
     if (offer.meta.sessionType !== this.type) return false
@@ -95,7 +95,7 @@ class Handshake extends Session {
 
     const name = fromOffer
       ? options.offer.name
-      : options.name || OfferName.generate(this.type).toString()
+      : options.name || SessionName.generate(this.type).toString()
     const curve = fromOffer
       ? options.offer.meta.curve
       : options.curve || 'P-256'
@@ -109,8 +109,8 @@ class Handshake extends Session {
 
   static async verifyCapability (capability) {
     if (!capability) throw new Error('capability must be defined')
-    if (!capability.name || !OfferName.isValid(capability.name)) return false
-    if (OfferName.parse(capability.name).type !== this.type) return false
+    if (!capability.name || !SessionName.isValid(capability.name)) return false
+    if (SessionName.parse(capability.name).type !== this.type) return false
     if (
       !capability.idKey || !capability.id || !capability.key ||
       !capability.jwk || !capability.curve
@@ -290,7 +290,7 @@ class Handshake extends Session {
       const key = await this._aesKey(state)
       return key.encrypt(
         crypto.util.str2ab(JSON.stringify(json)),
-        OfferName.parse(this.offer.name).iv
+        SessionName.parse(this.offer.name).iv
       )
     } catch (e) {
       this.log.error(e)
@@ -302,7 +302,7 @@ class Handshake extends Session {
       const key = await this._aesKey(state)
       const decrypted = await key.decrypt(
         new Uint8Array(cipherbytes),
-        OfferName.parse(this.offer.name).iv
+        SessionName.parse(this.offer.name).iv
       )
       return JSON.parse(crypto.util.ab2str(decrypted.buffer))
     } catch (e) {

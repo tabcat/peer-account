@@ -4,7 +4,7 @@ const assert = require('assert')
 const Ipfs = require('@tabcat/ipfs-bundle-t')
 const OrbitDB = require('orbit-db')
 const Identities = require('orbit-db-identity-provider')
-const OfferName = require('../src/offerName')
+const SessionName = require('../src/sessionName')
 const AsymChannel = require('../src/sessions/asymChannel')
 const OrbitdbC = require('../src/orbitdbController')
 const rmrf = require('rimraf')
@@ -119,21 +119,21 @@ describe('AsymChannel Session', function () {
 
   it('rejects sending offer with unsupported type', async () => {
     const unsupported = 'unsupported'
-    const { name } = OfferName.generate(unsupported)
+    const { name } = SessionName.generate(unsupported)
     await assert.rejects(asymChannel2.sendOffer({ name }))
     assert.strictEqual(asymChannel2.isSupported(unsupported), false)
     assert.strictEqual((await asymChannel2.getOffers()).length, 0)
   })
 
   it('rejects owner sending offer', async () => {
-    const { name } = OfferName.generate(supported)
+    const { name } = SessionName.generate(supported)
     await assert.rejects(asymChannel1.sendOffer({ name }))
     assert.strictEqual(asymChannel1.isSupported(supported), true)
     assert.strictEqual((await asymChannel2.getOffers()).length, 0)
   })
 
   it('sends an offer with a supported type', async () => {
-    const { name } = OfferName.generate(supported)
+    const { name } = SessionName.generate(supported)
     await asymChannel2.sendOffer({ name })
     await new Promise(resolve => {
       asymChannel1._state.events.once('replicated', resolve)
@@ -162,14 +162,14 @@ describe('AsymChannel Session', function () {
       validOffer = await asymChannel2.getOffer(entries[0].id)
       assert.notStrictEqual(validOffer, undefined)
       assert.strictEqual(
-        OfferName.parse(validOffer.name).id,
+        SessionName.parse(validOffer.name).id,
         entries[0].id
       )
       const timestamps = [Date.now(), 0, 2000000000000]
       const customOffers = await Promise.all(
         timestamps.map(async (v, i) => {
           const { name, id } =
-            OfferName.generate(i === 0 ? unsupported : supported)
+            SessionName.generate(i === 0 ? unsupported : supported)
           const offer = {
             name,
             _channel: {
@@ -198,13 +198,13 @@ describe('AsymChannel Session', function () {
 
     it('get a valid offer by name', async () => {
       assert.deepStrictEqual(
-        await asymChannel2.getOffer(OfferName.parse(validOffer.name).id),
+        await asymChannel2.getOffer(SessionName.parse(validOffer.name).id),
         validOffer
       )
       const entries = await asymChannel2._state.query(() => true)
       const invalidOffers = entries.filter(e =>
         e.id &&
-        e.id !== OfferName.parse(validOffer.name).id
+        e.id !== SessionName.parse(validOffer.name).id
       )
       await Promise.all(
         invalidOffers.map(async (v) => {
@@ -219,16 +219,16 @@ describe('AsymChannel Session', function () {
       let offers = await asymChannel2.getOffers()
       assert.strictEqual(offers.length, 1)
       assert.deepStrictEqual(offers[0], validOffer)
-      const offerName = OfferName.generate(supported)
-      await asymChannel2.sendOffer({ type: supported, name: offerName.name })
+      const sessionName = SessionName.generate(supported)
+      await asymChannel2.sendOffer({ type: supported, name: sessionName.name })
       offers = await asymChannel2.getOffers()
       assert.strictEqual(offers.length, 2)
       assert.strictEqual(
-        offers[0].name === validOffer.name || offers[0].name === offerName.name,
+        offers[0].name === validOffer.name || offers[0].name === sessionName.name,
         true
       )
       assert.strictEqual(
-        offers[1].name === validOffer.name || offers[1].name === offerName.name,
+        offers[1].name === validOffer.name || offers[1].name === sessionName.name,
         true
       )
     })

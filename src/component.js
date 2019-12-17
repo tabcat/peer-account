@@ -1,7 +1,7 @@
 
 'use strict'
 const Session = require('./session')
-const OfferName = require('./offerName')
+const SessionName = require('./sessionName')
 const crypto = require('@tabcat/peer-account-crypto')
 
 class Component extends Session {
@@ -15,7 +15,7 @@ class Component extends Session {
     const aesKey = await crypto.aes.importKey(capability.aes)
     const keyCheck = await aesKey.encrypt(
       crypto.util.str2ab(this.type),
-      OfferName.parse(capability.name).iv
+      SessionName.parse(capability.name).iv
     )
 
     return {
@@ -31,8 +31,8 @@ class Component extends Session {
 
   static async verifyOffer (offer) {
     if (!offer) throw new Error('offer must be defined')
-    if (!offer.name || !OfferName.isValid(offer.name)) return false
-    if (OfferName.parse(offer.name).type !== this.type) return false
+    if (!offer.name || !SessionName.isValid(offer.name)) return false
+    if (SessionName.parse(offer.name).type !== this.type) return false
     if (!offer.aes || !offer.meta) return false
     const { meta } = offer
     if (!meta.sessionType || !meta.keyCheck || !meta.owner) return false
@@ -40,7 +40,7 @@ class Component extends Session {
     return Boolean(
       await key.decrypt(
         new Uint8Array(offer.meta.keyCheck),
-        OfferName.parse(offer.name).iv
+        SessionName.parse(offer.name).iv
       ).catch(e => {
         console.error(e)
         console.error('offer failed keyCheck')
@@ -57,7 +57,7 @@ class Component extends Session {
 
     const name = fromOffer
       ? options.offer.name
-      : options.name || OfferName.generate(this.type).toString()
+      : options.name || SessionName.generate(this.type).toString()
     const aesKey = fromOffer
       ? await crypto.aes.importKey(options.offer.aes)
       : options.aesKey || await crypto.aes.generateKey(options.keyLen || 128)
@@ -71,8 +71,8 @@ class Component extends Session {
 
   static async verifyCapability (capability) {
     if (!capability) throw new Error('capability must be defined')
-    if (!capability.name || !OfferName.isValid(capability.name)) return false
-    if (OfferName.parse(capability.name).type !== this.type) return false
+    if (!capability.name || !SessionName.isValid(capability.name)) return false
+    if (SessionName.parse(capability.name).type !== this.type) return false
     if (!capability.idKey || !capability.id) return false
     if (!capability.aes) return false
     return true

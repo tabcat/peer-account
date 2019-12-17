@@ -1,7 +1,7 @@
 
 'use strict'
 const Session = require('../session')
-const OfferName = require('../offerName')
+const SessionName = require('../sessionName')
 
 class Channel extends Session {
   constructor (db, offer, capability, options = {}) {
@@ -27,7 +27,7 @@ class Channel extends Session {
 
   async sendOffer (offer) {}
 
-  async getOffer (offerName) {}
+  async getOffer (sessionName) {}
 
   async getOffers () {}
 
@@ -37,7 +37,7 @@ class Channel extends Session {
     }
     return (op) => {
       const offer = op.payload.value
-      return this.isSupported(OfferName.parse(offer.name).type) &&
+      return this.isSupported(SessionName.parse(offer.name).type) &&
       offer._channel &&
       (
         offer._channel.name !== undefined

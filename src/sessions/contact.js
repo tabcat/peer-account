@@ -4,7 +4,7 @@ const Session = require('../session')
 const AsymChannel = require('./asymChannel')
 const Handshake = require('./handshake')
 const SymChannel = require('./symChannel')
-const OfferName = require('../offerName')
+const SessionName = require('../sessionName')
 const Index = require('../encryptedIndex')
 const crypto = require('@tabcat/peer-account-crypto')
 
@@ -183,17 +183,17 @@ class Contact extends Session {
 
   static async verifyOffer (offer) {
     if (!offer) throw new Error('offer must be defined')
-    if (!offer.name || !OfferName.isValid(offer.name)) return false
-    if (OfferName.parse(offer.name).type !== this.type) return false
+    if (!offer.name || !SessionName.isValid(offer.name)) return false
+    if (SessionName.parse(offer.name).type !== this.type) return false
     if (!offer.meta || !offer.info) return false
     if (
       !offer[Handshake.type] ||
       !await Handshake.verifyOffer(offer[Handshake.type])
     ) return false
     if (!offer[SymChannel.type] || !offer[SymChannel.type].name) return false
-    if (!OfferName.isValid(offer[SymChannel.type].name)) return false
+    if (!SessionName.isValid(offer[SymChannel.type].name)) return false
     if (
-      OfferName.parse(offer[SymChannel.type].name).type !== SymChannel.type
+      SessionName.parse(offer[SymChannel.type].name).type !== SymChannel.type
     ) return false
     return true
   }
@@ -206,7 +206,7 @@ class Contact extends Session {
 
     const name = fromOffer
       ? options.offer.name
-      : options.name || OfferName.generate(this.type).toString()
+      : options.name || SessionName.generate(this.type).toString()
     const handshakeOffer = fromOffer
       ? options.offer[Handshake.type]
       : undefined
@@ -214,7 +214,7 @@ class Contact extends Session {
       ? options.offer[SymChannel.type].name
       : options[SymChannel.type] && options[SymChannel.type].name
         ? options[SymChannel.type].name
-        : OfferName.generate(SymChannel.type).name
+        : SessionName.generate(SymChannel.type).name
 
     const idKey = options.idKey || name
     const identity = await this._identity(idKey, options.identityProvider)
@@ -236,16 +236,16 @@ class Contact extends Session {
 
   static async verifyCapability (capability) {
     if (!capability) throw new Error('capability must be defined')
-    if (!capability.name || !OfferName.isValid(capability.name)) return false
-    if (OfferName.parse(capability.name).type !== this.type) return false
+    if (!capability.name || !SessionName.isValid(capability.name)) return false
+    if (SessionName.parse(capability.name).type !== this.type) return false
     if (!capability.idKey || !capability.id) return false
     if (!Handshake.verifyCapability(capability[Handshake.type])) return false
     if (
       !capability[SymChannel.type] || !capability[SymChannel.type].name
     ) return false
-    if (!OfferName.isValid(capability[SymChannel.type].name)) return false
+    if (!SessionName.isValid(capability[SymChannel.type].name)) return false
     if (
-      OfferName.parse(capability[SymChannel.type].name).type !== SymChannel.type
+      SessionName.parse(capability[SymChannel.type].name).type !== SymChannel.type
     ) return false
     return true
   }
@@ -253,7 +253,7 @@ class Contact extends Session {
   // creates an instance from a channel address that accepts contact offers
   static fromAddress (orbitdbC, address, options = {}) {
     const offer = {
-      name: OfferName.generate(this.type).name,
+      name: SessionName.generate(this.type).name,
       channel: address
     }
     return new Contact(

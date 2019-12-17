@@ -1,7 +1,7 @@
 
 'use strict'
 const Channel = require('./channel')
-const OfferName = require('../offerName')
+const SessionName = require('../sessionName')
 const crypto = require('@tabcat/peer-account-crypto')
 
 const status = {
@@ -93,8 +93,8 @@ class AsymChannel extends Channel {
 
   static async verifyOffer (offer) {
     if (!offer) throw new Error('offer must be defined')
-    if (!offer.name || !OfferName.isValid(offer.name)) return false
-    if (OfferName.parse(offer.name).type !== this.type) return false
+    if (!offer.name || !SessionName.isValid(offer.name)) return false
+    if (SessionName.parse(offer.name).type !== this.type) return false
     if (!offer.meta) return false
     const { meta } = offer
     if (meta.sessionType !== this.type) return false
@@ -112,7 +112,7 @@ class AsymChannel extends Channel {
 
     const name = fromOffer
       ? options.offer.name
-      : options.name || OfferName.generate(this.type).toString()
+      : options.name || SessionName.generate(this.type).toString()
     const curve = fromOffer
       ? options.offer.meta.curve
       : options.curve || 'P-256'
@@ -126,8 +126,8 @@ class AsymChannel extends Channel {
 
   static async verifyCapability (capability) {
     if (!capability) throw new Error('capability must be defined')
-    if (!capability.name || !OfferName.isValid(capability.name)) return false
-    if (OfferName.parse(capability.name).type !== this.type) return false
+    if (!capability.name || !SessionName.isValid(capability.name)) return false
+    if (SessionName.parse(capability.name).type !== this.type) return false
     if (
       !capability.idKey || !capability.id || !capability.key ||
       !capability.jwk || !capability.curve
@@ -140,13 +140,13 @@ class AsymChannel extends Channel {
     if (!address) throw new Error('address must be defined')
     if (!orbitdbC.isValidAddress(address)) throw new Error('invalid address')
 
-    const offerName = OfferName.parse(orbitdbC.parseAddress(address).path)
-    if (offerName.type !== this.type) {
+    const sessionName = SessionName.parse(orbitdbC.parseAddress(address).path)
+    if (sessionName.type !== this.type) {
       throw new Error(
-        `offer type was ${offerName.type}, expected ${this.type}`
+        `offer type was ${sessionName.type}, expected ${this.type}`
       )
     }
-    const offer = { name: offerName.name, address: address.toString() }
+    const offer = { name: sessionName.name, address: address.toString() }
     return new AsymChannel(
       orbitdbC,
       offer,
@@ -166,8 +166,8 @@ class AsymChannel extends Channel {
       throw new Error('tried to send offer as owner')
     }
     if (!offer.name) throw new Error('offer must have a name')
-    const offerName = OfferName.parse(offer.name)
-    if (!this.isSupported(offerName.type)) {
+    const sessionName = SessionName.parse(offer.name)
+    if (!this.isSupported(sessionName.type)) {
       throw new Error('unsupported session type')
     }
     if (!offer._channel) {
@@ -178,7 +178,7 @@ class AsymChannel extends Channel {
       }
     }
 
-    const offerId = offerName.id
+    const offerId = sessionName.id
     if (await this.getOffer(offerId)) throw new Error('offer already exists!')
     const encryptedOffer = await this._encrypt(offer)
 
@@ -194,7 +194,7 @@ class AsymChannel extends Channel {
     try {
       await this.initialized
       if (!offerId) throw new Error('offerId must be defined')
-      if (!OfferName.isValidId(offerId)) throw new Error('invalid offerId')
+      if (!SessionName.isValidId(offerId)) throw new Error('invalid offerId')
       const op = await this._state.query(
         op =>
           (
@@ -228,7 +228,7 @@ class AsymChannel extends Channel {
           this.direction === 'recipient' ||
           op.identity.id === this.capability.id
         ) &&
-        OfferName.isValidId(op.payload.key) &&
+        SessionName.isValidId(op.payload.key) &&
         op.payload.key === op.payload.value.id &&
         op.payload.value.key &&
         op.payload.value.cipherbytes,
@@ -272,7 +272,7 @@ class AsymChannel extends Channel {
       const key = await this._aesKey(offer)
       return key.encrypt(
         crypto.util.str2ab(JSON.stringify(offer)),
-        OfferName.parse(offer.name).iv
+        SessionName.parse(offer.name).iv
       )
     } catch (e) {
       this.log.error(e)
@@ -284,7 +284,7 @@ class AsymChannel extends Channel {
       const key = await this._aesKey(encOffer)
       const decrypted = await key.decrypt(
         new Uint8Array(encOffer.cipherbytes),
-        OfferName.idToIv(encOffer.id)
+        SessionName.idToIv(encOffer.id)
       )
       return JSON.parse(crypto.util.ab2str(decrypted.buffer))
     } catch (e) {

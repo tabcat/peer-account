@@ -16,7 +16,7 @@ const connectPeers = async (ipfs1, ipfs2) => {
 }
 
 describe('Contacts Component', function () {
-  this.timeout(100000)
+  this.timeout(timeout)
 
   let ipfs1, ipfs2, orbitdb1, orbitdb2, index1, index2, account1, account2
 

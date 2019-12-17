@@ -6,7 +6,7 @@ const OrbitDB = require('orbit-db')
 const Identities = require('orbit-db-identity-provider')
 const Contact = require('../src/sessions/contact')
 const AsymChannel = require('../src/sessions/asymChannel')
-const OfferName = require('../src/offerName')
+const SessionName = require('../src/sessionName')
 const OrbitdbC = require('../src/orbitdbController')
 const rmrf = require('rimraf')
 const { timeout } = require('./utils/config')
@@ -121,7 +121,7 @@ describe('Contact Session', function () {
       asymChannel1._state.events.once('replicated', resolve)
     })
     const offer = await asymChannel1.getOffer(
-      OfferName.parse(contact2.offer.name).id
+      SessionName.parse(contact2.offer.name).id
     )
     contact1 = await Contact.accept(
       orbitdbC1,

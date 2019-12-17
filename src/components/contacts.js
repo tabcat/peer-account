@@ -4,7 +4,7 @@ const Component = require('../component')
 const Index = require('../encryptedIndex')
 const AsymChannel = require('../sessions/asymChannel')
 const Contact = require('../sessions/contact')
-const OfferName = require('../offerName')
+const SessionName = require('../sessionName')
 
 const status = {
   PRE_INIT: 'PRE_INIT',
@@ -142,12 +142,12 @@ class Contacts extends Component {
     return this._contacts[contact.offer.name]
   }
 
-  async openContact (offerName) {
-    if (!offerName) throw new Error('offerName must be defined')
-    const { name, type } = OfferName.parse(offerName)
+  async openContact (sessionName) {
+    if (!sessionName) throw new Error('sessionName must be defined')
+    const { name, type } = SessionName.parse(sessionName)
     if (type !== Contact.type) {
       throw new Error(
-        `offerName type must be '${Contact.type}' but was '${type}'`
+        `sessionName type must be '${Contact.type}' but was '${type}'`
       )
     }
 
@@ -203,12 +203,12 @@ class Contacts extends Component {
     return this._channels[channel.offer.name]
   }
 
-  async openChannel (offerName) {
-    if (!offerName) throw new Error('offerName must be defined')
-    const { name, type } = OfferName.parse(offerName)
+  async openChannel (sessionName) {
+    if (!sessionName) throw new Error('sessionName must be defined')
+    const { name, type } = SessionName.parse(sessionName)
     if (type !== AsymChannel.type) {
       throw new Error(
-        `offerName type must be '${AsymChannel.type}' but was '${type}'`
+        `sessionName type must be '${AsymChannel.type}' but was '${type}'`
       )
     }
     if (this._channels[name]) return this._channels[name]
@@ -233,9 +233,9 @@ class Contacts extends Component {
 
   // async closeChannel () {}
 
-  async contactOffer (offerName) {
-    if (!offerName) throw new Error('offerName must be defined')
-    const { id } = OfferName.parse(offerName)
+  async contactOffer (sessionName) {
+    if (!sessionName) throw new Error('sessionName must be defined')
+    const { id } = SessionName.parse(sessionName)
     const offers = await Promise.all(
       Object.values(this.channels)
         .map((channel) => channel.getOffer(id))
@@ -253,9 +253,9 @@ class Contacts extends Component {
     ).then(arrays => flatMap(a => a, arrays))
   }
 
-  async acceptOffer (offerName, options = {}) {
-    if (!offerName) throw new Error('offerName must be defined')
-    const { name } = OfferName.parse(offerName)
+  async acceptOffer (sessionName, options = {}) {
+    if (!sessionName) throw new Error('sessionName must be defined')
+    const { name } = SessionName.parse(sessionName)
     const contactOffer = await this.contactOffer(name)
     if (!contactOffer) throw new Error('offer does not exist')
 

@@ -1,7 +1,7 @@
 
 'use strict'
 const Session = require('../session')
-const OfferName = require('../offerName')
+const SessionName = require('../sessionName')
 
 const status = {
   INIT: 'INIT',
@@ -38,7 +38,7 @@ class Profile extends Session {
       this.isOwner = this.offer.meta.owner.id === this.capability.id
       this.profile = await this.getProfile()
       if (this.isOwner && this.profile === undefined) {
-        await this.setProfile({ name: OfferName.parse(this.offer.name).id })
+        await this.setProfile({ name: SessionName.parse(this.offer.name).id })
       }
       setStatus(this, status.READY)
     } catch (e) {
@@ -51,13 +51,13 @@ class Profile extends Session {
   // session type
   static get type () { return 'profile' }
 
-  static async createOffer (offerName, capability, options = {}) {
-    if (!offerName) throw new Error('offerName must be defined')
-    offerName = OfferName.parse(offerName)
-    if (offerName.type !== this.type) throw new Error('invalid offerName type')
+  static async createOffer (sessionName, capability, options = {}) {
+    if (!sessionName) throw new Error('sessionName must be defined')
+    sessionName = SessionName.parse(sessionName)
+    if (sessionName.type !== this.type) throw new Error('invalid sessionName type')
 
     return {
-      name: offerName.name,
+      name: sessionName.name,
       meta: { sessionType: this.type, owner: { id: capability.id } }
     }
   }
@@ -66,17 +66,17 @@ class Profile extends Session {
     if (!orbitdbC) throw new Error('orbitdbC must be defined')
     if (!offer) throw new Error('offer must be defined')
     if (!offer.name) return false
-    if (OfferName.parse(offer.name).type !== this.type) return false
+    if (SessionName.parse(offer.name).type !== this.type) return false
     if (!offer.meta) return false
     return true
   }
 
-  static async createCapability (offerName, options = {}) {
-    if (!offerName) throw new Error('offerName must be defined')
-    offerName = OfferName.parse(offerName)
-    if (offerName.type !== this.type) throw new Error('invalid offerName type')
+  static async createCapability (sessionName, options = {}) {
+    if (!sessionName) throw new Error('sessionName must be defined')
+    sessionName = SessionName.parse(sessionName)
+    if (sessionName.type !== this.type) throw new Error('invalid sessionName type')
 
-    const idKey = options.idKey || offerName.name
+    const idKey = options.idKey || sessionName.name
     const identity = await this._identity(idKey, options.identityProvider)
 
     return {
