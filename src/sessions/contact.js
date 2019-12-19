@@ -4,6 +4,8 @@ const Session = require('../session')
 const AsymChannel = require('./asymChannel')
 const Handshake = require('./handshake')
 const SymChannel = require('./symChannel')
+const Message = require('./message')
+const Profile = require('./profile')
 const SessionName = require('../sessionName')
 const Index = require('../encryptedIndex')
 const crypto = require('@tabcat/peer-account-crypto')
@@ -18,14 +20,12 @@ const status = {
 }
 const setStatus = require('../utils').setStatus(status)
 
-const supported = [
-  SymChannel.type
-]
-
 class Contact extends Session {
   constructor (orbitdbC, offer, capability, options = {}) {
     super(orbitdbC, offer, capability, options)
+    this.profile = null
     this.channel = null
+    this.message = null
     this.initialized = this._initialize()
   }
 
@@ -98,6 +98,8 @@ class Contact extends Session {
       const shake = await handshake.state()
       const aesKey = await crypto.aes.importKey(new Uint8Array(shake.aes))
       const idKey = shake.idKey
+      const myRole = handshake.direction
+      const theirRole = myRole === 'recipient' ? 'sender' : 'recipient'
 
       const dbAddr = await Index.determineAddress(
         this._orbitdbC._orbitdb,
@@ -124,6 +126,7 @@ class Contact extends Session {
           )
         }
       )
+      this._state = state
 
       const symChannelCapability = await SymChannel.createCapability(
         {
@@ -138,7 +141,7 @@ class Contact extends Session {
         {
           sender: shake.sender.id,
           recipient: shake.recipient.id,
-          supported
+          supported: ['*']
         }
       )
       const symChannel = await SymChannel.open(
@@ -148,11 +151,62 @@ class Contact extends Session {
         { log: this.log }
       )
 
-      await state.initialized
-      await symChannel.initialized
+      const messageCapability = await SymChannel.createCapability(
+        {
+          name: this.offer[Message.type].name,
+          aesKey,
+          idKey,
+          identityProvider: this._orbitdbC._orbitdb.identity._provider
+        }
+      )
+      const messageOffer = await Message.createOffer(
+        messageCapability,
+        {
+          sender: shake.sender.id,
+          recipient: shake.recipient.id
+        }
+      )
+      const message = await Message.open(
+        this._orbitdbC,
+        messageOffer,
+        messageCapability,
+        { log: this.log }
+      )
 
-      this._state = state
+      const profileDocKey = (role) => `${Profile.type}-${role}`
+      if (!await this._state.match(profileDocKey(myRole))) {
+        await this._state.set(
+          profileDocKey(myRole),
+          this.capability.profile
+        )
+      }
+      if (!await this._state.match(profileDocKey(theirRole))) {
+        await new Promise(resolve => {
+          const onReplicated = async () => {
+            if (await this._state.match(profileDocKey(theirRole))) {
+              this._state._docstore.events.removeListener(
+                'replicated',
+                onReplicated
+              )
+              resolve()
+            }
+          }
+          this._state._docstore.events.on('replicated', onReplicated)
+        })
+      }
+      const profileDoc = await this._state.match(profileDocKey(theirRole))
+      if (!profileDoc) {
+        throw new Error('their profile doc should be defined now')
+      }
+      const profile = await Profile.accept(this._orbitdbC, profileDoc)
+
+      await Promise.all([
+        symChannel.initialized, message.initialized, profile.initialized
+      ])
+
       this.channel = symChannel
+      this.message = message
+      this.profile = profile
 
       setStatus(this, status.READY)
     } catch (e) {
@@ -202,6 +256,10 @@ class Contact extends Session {
     if (!options.identityProvider) {
       throw new Error('options.identityProvider must be defined')
     }
+    if (!options.profile) throw new Error('options.profile must be defined')
+    if (!Profile.verifyOffer(options.profile)) {
+      throw new Error('invalid profile offer')
+    }
     const fromOffer = options.offer && await this.verifyOffer(options.offer)
 
     const name = fromOffer
@@ -215,6 +273,11 @@ class Contact extends Session {
       : options[SymChannel.type] && options[SymChannel.type].name
         ? options[SymChannel.type].name
         : SessionName.generate(SymChannel.type).name
+    const messageName = fromOffer
+      ? options.offer[Message.type].name
+      : options[Message.type] && options[Message.type].name
+        ? options[Message.type].name
+        : SessionName.generate(Message.type).name
 
     const idKey = options.idKey || name
     const identity = await this._identity(idKey, options.identityProvider)
@@ -230,7 +293,9 @@ class Contact extends Session {
           offer: handshakeOffer
         }
       ),
-      [SymChannel.type]: { name: symChannelName }
+      [SymChannel.type]: { name: symChannelName },
+      [Message.type]: { name: messageName },
+      [Profile.type]: options.profile
     }
   }
 
@@ -245,7 +310,20 @@ class Contact extends Session {
     ) return false
     if (!SessionName.isValid(capability[SymChannel.type].name)) return false
     if (
-      SessionName.parse(capability[SymChannel.type].name).type !== SymChannel.type
+      SessionName.parse(capability[SymChannel.type].name).type !==
+        SymChannel.type
+    ) return false
+    if (
+      !capability[Message.type] || !capability[Message.type].name
+    ) return false
+    if (!SessionName.isValid(capability[Message.type].name)) return false
+    if (
+      SessionName.parse(capability[Message.type].name).type !==
+        Message.type
+    ) return false
+    if (
+      !capability[Profile.type] ||
+      !await Profile.verifyOffer(capability[Profile.type])
     ) return false
     return true
   }
@@ -260,11 +338,7 @@ class Contact extends Session {
       orbitdbC,
       offer,
       null,
-      {
-        log: options.log,
-        [Handshake.type]: options[Handshake.type],
-        info: options.info
-      }
+      options
     )
   }
 }

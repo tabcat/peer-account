@@ -15,11 +15,10 @@ const connectPeers = async (ipfs1, ipfs2) => {
   await ipfs2.swarm.connect(id1.addresses[0])
 }
 
-describe('Contacts Component', function () {
+describe('Comms Component', function () {
   this.timeout(timeout)
 
   let ipfs1, ipfs2, orbitdb1, orbitdb2, index1, index2, account1, account2
-
   let channel1, contact1, contact2
 
   const channelName = 'channelName'
@@ -76,7 +75,7 @@ describe('Contacts Component', function () {
   })
 
   it('creates an asym channel for accepting contact offers', async () => {
-    channel1 = await account1.contacts.createChannel({ meta: channelName })
+    channel1 = await account1.comms.createChannel({ meta: channelName })
     await new Promise((resolve, reject) => {
       channel1.events.once('status:FAILED', reject)
       channel1.events.once('status:LISTENING', () => {
@@ -86,18 +85,18 @@ describe('Contacts Component', function () {
     })
     assert.strictEqual(channel1.status, 'LISTENING')
     assert.strictEqual(
-      account1.contacts.channels[channel1.offer.name],
+      account1.comms.channels[channel1.offer.name],
       channel1
     )
     assert.strictEqual(channel1.isSupported('contact'), true)
     assert.strictEqual(
-      !!await account1.contacts._matchRecord(channel1.offer.name),
+      !!await account1.comms._matchRecord(channel1.offer.name),
       true
     )
   })
 
   it('sends a contact offer to contact accepting asymChannel', async () => {
-    contact2 = await account2.contacts.addContact(
+    contact2 = await account2.comms.addContact(
       channel1.address,
       { meta: contactName }
     )
@@ -109,11 +108,11 @@ describe('Contacts Component', function () {
       })
     })
     assert.strictEqual(
-      account2.contacts.contacts[contact2.offer.name],
+      account2.comms.contacts[contact2.offer.name],
       contact2
     )
     assert.strictEqual(
-      !!await account2.contacts._matchRecord(contact2.offer.name),
+      !!await account2.comms._matchRecord(contact2.offer.name),
       true
     )
     await new Promise(resolve => {
@@ -122,35 +121,35 @@ describe('Contacts Component', function () {
   })
 
   it('shows contact offer by name', async () => {
-    const offer = await account1.contacts.contactOffer(contact2.offer.name)
+    const offer = await account1.comms.contactOffer(contact2.offer.name)
     assert.notStrictEqual(offer, undefined)
     assert.strictEqual(offer.name, contact2.offer.name)
   })
 
   it('shows all contact offers', async () => {
-    const offers = await account1.contacts.contactOffers()
+    const offers = await account1.comms.contactOffers()
     assert.strictEqual(offers.length, 1)
     assert.strictEqual(offers[0].name, contact2.offer.name)
   })
 
   it('accepts a contact offer sent to the asym channel', async () => {
-    contact1 = await account1.contacts.acceptOffer(
+    contact1 = await account1.comms.acceptOffer(
       contact2.offer.name,
       { meta: contactName }
     )
     assert.strictEqual(contact1.status, 'READY')
     assert.strictEqual(
-      account1.contacts.contacts[contact1.offer.name],
+      account1.comms.contacts[contact1.offer.name],
       contact1
     )
     assert.strictEqual(
-      !!account1.contacts._matchRecord(contact1.offer.name),
+      !!account1.comms._matchRecord(contact1.offer.name),
       true
     )
   })
 
   it('query contact records', async () => {
-    const record = (await account1.contacts.queryContacts(record => {
+    const record = (await account1.comms.queryContacts(record => {
       return record.meta === contactName
     }))[0]
     assert.notStrictEqual(record, undefined)
@@ -159,7 +158,7 @@ describe('Contacts Component', function () {
   })
 
   it('query asym channel records', async () => {
-    const record = (await account1.contacts.queryChannels(record => {
+    const record = (await account1.comms.queryChannels(record => {
       return record.meta === channelName
     }))[0]
     assert.notStrictEqual(record, undefined)
@@ -172,9 +171,9 @@ describe('Contacts Component', function () {
     const channelOffer = channel1.offer
     account1 = await PeerAccount.login(orbitdb1, index1.dbAddr, index1.rawKey)
     await account1.initialized
-    assert.strictEqual(!!account1.contacts.contacts[contactOffer.name], true)
-    assert.strictEqual(!!account1.contacts.channels[channelOffer.name], true)
-    await account1.contacts.contacts[contactOffer.name].initialized
-    await account1.contacts.channels[channelOffer.name].initialized
+    assert.strictEqual(!!account1.comms.contacts[contactOffer.name], true)
+    assert.strictEqual(!!account1.comms.channels[channelOffer.name], true)
+    await account1.comms.contacts[contactOffer.name].initialized
+    await account1.comms.channels[channelOffer.name].initialized
   })
 })

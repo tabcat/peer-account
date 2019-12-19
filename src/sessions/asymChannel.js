@@ -59,7 +59,6 @@ class AsymChannel extends Channel {
           meta: this.offer.meta
         }
       })
-      this.address = this._state.address
       this._supported = this.offer.meta.supported
       this.direction = this.offer.meta.owner.id === this.capability.id
         ? 'recipient' : 'sender'
@@ -147,17 +146,10 @@ class AsymChannel extends Channel {
       )
     }
     const offer = { name: sessionName.name, address: address.toString() }
-    return new AsymChannel(
-      orbitdbC,
-      offer,
-      null,
-      {
-        log: options.log,
-        idKey: options.idKey,
-        ...options
-      }
-    )
+    return new AsymChannel(orbitdbC, offer, null, options)
   }
+
+  get address () { return this._state.address }
 
   async sendOffer (offer) {
     await this.initialized

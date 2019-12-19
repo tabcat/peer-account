@@ -20,7 +20,7 @@ class Profiles extends Component {
   async _initialize () {
     try {
       setStatus(this, status.INIT)
-      const record = await this._matchRecord('profile')
+      const record = await this._matchRecord('_default')
       if (record && !record.session) {
         throw new Error('no session for default profile')
       }
@@ -29,10 +29,11 @@ class Profiles extends Component {
           this._orbitdbC,
           record.session.offer,
           record.session.capability,
-          record.options
+          this.options
         )
-        : await Profile.offer(this._orbitdbC)
-      this.profiles = { profile }
+        : await Profile.offer(this._orbitdbC, this.options)
+      await profile.initialized
+      this.profiles = { _default: profile }
       setStatus(this, status.READY)
     } catch (e) {
       this.log.error(e)
@@ -42,6 +43,17 @@ class Profiles extends Component {
   }
 
   static get type () { return 'profiles' }
+
+  get default () {
+    return this.profiles[this.profiles._default]
+  }
+
+  async setDefault (sessionName) {
+    if (!this.profiles[sessionName]) {
+      throw new Error('profile session isnt open')
+    }
+    this.profiles._default = sessionName
+  }
 }
 
 module.exports = Profiles

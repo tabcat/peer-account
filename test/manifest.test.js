@@ -40,9 +40,14 @@ describe('Manifest Component', function () {
     index = await PeerAccount.genAccountIndex(orbitdb)
     account = await PeerAccount.login(orbitdb, index.dbAddr, index.rawKey)
     await account.initialized
-    await account.manifest.delAddr(account._accountIndex._docstore.address.toString())
     await account.manifest.delAddr(
-      account.contacts._state._docstore.address.toString()
+      account._accountIndex._docstore.address.toString()
+    )
+    await account.manifest.delAddr(
+      account.comms._state._docstore.address.toString()
+    )
+    await account.manifest.delAddr(
+      account.comms.profile._state.address.toString()
     )
     assert.strictEqual(!!account.manifest, true)
   })

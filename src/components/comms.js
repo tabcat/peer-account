@@ -2,6 +2,7 @@
 'use strict'
 const Component = require('../component')
 const Index = require('../encryptedIndex')
+const Profile = require('../sessions/profile')
 const AsymChannel = require('../sessions/asymChannel')
 const Contact = require('../sessions/contact')
 const SessionName = require('../sessionName')
@@ -15,12 +16,12 @@ const status = {
 const setStatus = require('../utils').setStatus(status)
 
 const flatMap = (f, xs) =>
-  xs.reduce((acc, x) =>
-    acc.concat(f(x)), [])
+  xs.reduce((acc, x) => acc.concat(f(x)), [])
 
-class Contacts extends Component {
+class Comms extends Component {
   constructor (orbitdbC, offer, capability, options) {
     super(orbitdbC, offer, capability, options)
+    this.profile = null
     this._contacts = {}
     this._channels = {}
     this.initialized = this._initialize()
@@ -56,7 +57,25 @@ class Contacts extends Component {
         }
       )
 
-      console.log(dbAddr.toString())
+      const profileRecord = await this._matchRecord('profile')
+      this.profile = profileRecord
+        ? await Profile.open(
+          this._orbitdbC,
+          profileRecord.offer,
+          profileRecord.capability,
+          { ...this.options[Profile.type], log: this.log }
+        )
+        : await Profile.offer(
+          this._orbitdbC,
+          { ...this.options[Profile.type], log: this.log }
+        )
+      await this.profile.initialized
+      if (this.profile.status === status.FAILED) {
+        throw new Error('contacts profile failed to initialize')
+      }
+      if (!profileRecord) {
+        await this._setRecord('profile', this.profile.toJSON())
+      }
 
       if (this.options.load !== false) {
         await Promise.all([
@@ -76,23 +95,12 @@ class Contacts extends Component {
     } catch (e) {
       this.log.error(e)
       setStatus(this, status.FAILED)
-      throw new Error(`${Contacts.type} failed initialization`)
+      throw new Error(`${Comms.type} failed initialization`)
     }
   }
 
-  static get type () { return 'contacts' }
+  static get type () { return 'comms' }
 
-  /*
-    add a contact from an address of one of their channels for accepting
-    contact offers.
-    options.info is info to provide about yourself, like the address of your
-    profile, with the contact offer. the owner of the channel recieving the
-    contact offer can read the info and decide if they want to
-    accept the offer.
-    options.meta here is used to store information about the contact its
-    sending the offer to. this could be anything the user wants like a name
-    and other things that could be used to query the contact records.
-  */
   async addContact (channelAddress, options = {}) {
     await this.initialized
     if (!channelAddress) throw new Error('channelAddress must be defined')
@@ -101,16 +109,17 @@ class Contacts extends Component {
         `channelAddress ${channelAddress} is not a valid orbitdb address`
       )
     }
+    const info = { name: await this.profile.getField('name') }
     const contact = await Contact.fromAddress(
       this._orbitdbC,
       channelAddress,
-      { log: this.log, info: options.info }
+      { log: this.log, info, profile: this.profile.offer }
     )
     await this._setRecord(
       contact.offer.name,
       {
         name: contact.offer.name,
-        info: options.info,
+        info,
         channelAddress,
         origin: options.origin || channelAddress,
         meta: options.meta || {}
@@ -171,7 +180,7 @@ class Contacts extends Component {
       : await Contact.fromAddress(
         this._orbitdbC,
         record.channelAddress,
-        { log: this.log, info: record.info }
+        { log: this.log, info: record.info, profile: this.profile.offer }
       )
 
     this._contacts = { ...this._contacts, [name]: contact }
@@ -264,7 +273,8 @@ class Contacts extends Component {
       contactOffer,
       {
         log: this.log,
-        handshake: { idKey: contactOffer._channel.name }
+        handshake: { idKey: contactOffer._channel.name },
+        profile: this.profile.offer
       }
     )
     await contact.initialized
@@ -300,4 +310,4 @@ class Contacts extends Component {
   // async declineRequest (requestId, options) {}
 }
 
-module.exports = Contacts
+module.exports = Comms

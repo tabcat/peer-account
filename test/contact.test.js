@@ -6,6 +6,7 @@ const OrbitDB = require('orbit-db')
 const Identities = require('orbit-db-identity-provider')
 const Contact = require('../src/sessions/contact')
 const AsymChannel = require('../src/sessions/asymChannel')
+const Profile = require('../src/sessions/profile')
 const SessionName = require('../src/sessionName')
 const OrbitdbC = require('../src/orbitdbController')
 const rmrf = require('rimraf')
@@ -22,6 +23,7 @@ describe('Contact Session', function () {
   this.timeout(timeout)
 
   let ipfs1, ipfs2, orbitdbC1, orbitdbC2, contact1, contact2, identity2
+  let profile1, profile2
 
   const idKey2 = 'idKey2'
 
@@ -68,6 +70,10 @@ describe('Contact Session', function () {
       idKey2,
       orbitdbC2._orbitdb.identity._provider
     )
+    profile1 = await Profile.offer(orbitdbC1)
+    await profile1.initialized
+    profile2 = await Profile.offer(orbitdbC2)
+    await profile2.initialized
     await connectPeers(ipfs1, ipfs2)
   })
 
@@ -78,10 +84,35 @@ describe('Contact Session', function () {
     await ipfs2.stop()
   })
 
+  const checkContacts = (c1, c2) => {
+    assert.strictEqual(
+      c1._state._docstore.address.toString(),
+      c2._state._docstore.address.toString()
+    )
+    assert.strictEqual(
+      c1.channel._state.address.toString(),
+      c2.channel._state.address.toString()
+    )
+    assert.strictEqual(
+      c1.message._state.address.toString(),
+      c2.message._state.address.toString()
+    )
+    assert.notStrictEqual(
+      c1.profile._state.address.toString(),
+      c2.profile._state.address.toString()
+    )
+    assert.strictEqual(c1.channel.status, 'LISTENING')
+    assert.strictEqual(c2.channel.status, 'LISTENING')
+    assert.strictEqual(c1.message.status, 'READY')
+    assert.strictEqual(c2.message.status, 'READY')
+    assert.strictEqual(c1.profile.status, 'READY')
+    assert.strictEqual(c2.profile.status, 'READY')
+  }
+
   it('creates a contact offer and opens the instance', async () => {
     contact1 = await Contact.offer(
       orbitdbC1,
-      { handshake: { recipient: identity2.id } }
+      { handshake: { recipient: identity2.id }, profile: profile1.offer }
     )
     await new Promise(resolve => {
       contact1.events.once('status:HANDSHAKE', resolve)
@@ -93,18 +124,10 @@ describe('Contact Session', function () {
     contact2 = await Contact.accept(
       orbitdbC2,
       contact1.offer,
-      { handshake: { idKey: idKey2 } }
+      { handshake: { idKey: idKey2 }, profile: profile2.offer }
     )
     await Promise.all([contact1.initialized, contact2.initialized])
-    assert.strictEqual(contact2.status, 'READY')
-    assert.strictEqual(
-      contact1._state._docstore.address.toString(),
-      contact2._state._docstore.address.toString()
-    )
-    assert.strictEqual(
-      contact1.channel._state.address.toString(),
-      contact2.channel._state.address.toString()
-    )
+    checkContacts(contact1, contact2)
   })
 
   it('contact setup from an asymChannel address', async () => {
@@ -115,7 +138,8 @@ describe('Contact Session', function () {
     await asymChannel1.initialized
     contact2 = await Contact.fromAddress(
       orbitdbC2,
-      asymChannel1.address
+      asymChannel1.address,
+      { profile: profile2.offer }
     )
     await new Promise(resolve => {
       asymChannel1._state.events.once('replicated', resolve)
@@ -126,16 +150,12 @@ describe('Contact Session', function () {
     contact1 = await Contact.accept(
       orbitdbC1,
       offer,
-      { handshake: { idKey: asymChannel1.capability.idKey } }
+      {
+        handshake: { idKey: asymChannel1.capability.idKey },
+        profile: profile1.offer
+      }
     )
     await Promise.all([contact1.initialized, contact2.initialized])
-    assert.strictEqual(
-      contact1._state._docstore.address.toString(),
-      contact2._state._docstore.address.toString()
-    )
-    assert.strictEqual(
-      contact1.channel._state.address.toString(),
-      contact2.channel._state.address.toString()
-    )
+    checkContacts(contact1, contact2)
   })
 })
