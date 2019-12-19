@@ -210,9 +210,9 @@ class Contact extends Session {
 
       setStatus(this, status.READY)
     } catch (e) {
-      this.log.error(e)
-      this.log.error('failed to initialize contact')
       setStatus(this, status.FAILED)
+      this.log.error(e)
+      throw new Error(`${Contact.type} failed initialization`)
     }
   }
 

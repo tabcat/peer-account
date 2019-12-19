@@ -93,8 +93,8 @@ class Comms extends Component {
 
       setStatus(this, status.READY)
     } catch (e) {
-      this.log.error(e)
       setStatus(this, status.FAILED)
+      this.log.error(e)
       throw new Error(`${Comms.type} failed initialization`)
     }
   }

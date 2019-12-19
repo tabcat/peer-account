@@ -41,8 +41,9 @@ class SymChannel extends Channel {
       this._state.events.on('write', () => this.events.emit('update'))
       setStatus(this, status.LISTENING)
     } catch (e) {
-      this.log.error(e)
       setStatus(this, status.FAILED)
+      this.log.error(e)
+      throw new Error(`${SymChannel.type} failed initialization`)
     }
   }
 

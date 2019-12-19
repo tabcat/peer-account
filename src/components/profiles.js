@@ -36,8 +36,8 @@ class Profiles extends Component {
       this.profiles = { _default: profile }
       setStatus(this, status.READY)
     } catch (e) {
-      this.log.error(e)
       setStatus(this, status.FAILED)
+      this.log.error(e)
       throw new Error(`${Profiles.type} failed initialization`)
     }
   }

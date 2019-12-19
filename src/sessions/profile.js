@@ -61,9 +61,9 @@ class Profile extends Session {
       this.isOwner = this.offer.meta.owner.id === this.capability.id
       setStatus(this, status.READY)
     } catch (e) {
-      this.log.error(e)
-      this.log.error('failed to initialize profile')
       setStatus(this, status.FAILED)
+      this.log.error(e)
+      throw new Error(`${Profile.type} failed initialization`)
     }
   }
 

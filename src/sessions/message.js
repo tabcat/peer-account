@@ -37,8 +37,9 @@ class Message extends Session {
       })
       setStatus(this, status.READY)
     } catch (e) {
-      this.log.error(e)
       setStatus(this, status.FAILED)
+      this.log.error(e)
+      throw new Error(`${Message.type} failed initialization`)
     }
   }
 

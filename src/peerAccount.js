@@ -86,7 +86,7 @@ class PeerAccount {
     } catch (e) {
       setStatus(this, status.FAILED)
       this.log.error(e)
-      this.log.error('failed initialization')
+      throw new Error('failed initialization')
     }
   }
 

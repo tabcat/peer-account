@@ -54,8 +54,9 @@ class Handshake extends Session {
       setStatus(this, await this.state().then(s => s.status))
       if (this.options.start) this.start()
     } catch (e) {
-      this.log.error(e)
       setStatus(this, status.FAILED)
+      this.log.error(e)
+      throw new Error(`${Handshake.type} failed initialization`)
     }
   }
 

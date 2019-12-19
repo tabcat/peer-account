@@ -62,7 +62,7 @@ class Manifest extends Component {
     } catch (e) {
       setStatus(this, status.FAILED)
       this.log.error(e)
-      this.log.error('failed initialization')
+      throw new Error(`${Manifest.type} failed initialization`)
     }
   }
 
