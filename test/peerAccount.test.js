@@ -10,7 +10,7 @@ const { timeout } = require('./utils/config')
 describe('PeerAccount', function () {
   this.timeout(timeout)
 
-  let ipfs, orbitdb, dbAddr, rawKey
+  let ipfs, orbitdb, dbAddr, rawKey, account
 
   before(async () => {
     rmrf.sync('./ipfs')
@@ -27,7 +27,7 @@ describe('PeerAccount', function () {
     await ipfs.stop()
   })
 
-  it('generates a new account index for an account', async () => {
+  it('generates a new account index', async () => {
     const newIndex = await PeerAccount.genAccountIndex(orbitdb)
     const { index, aesKey } = newIndex
     dbAddr = newIndex.dbAddr
@@ -35,11 +35,25 @@ describe('PeerAccount', function () {
     assert.strictEqual(await index.constructor.keyCheck(dbAddr, aesKey), true)
   })
 
-  it('logins into an account', async () => {
-    const account = await PeerAccount.login(orbitdb, dbAddr, rawKey)
+  it('logs into an account', async () => {
+    account = await PeerAccount.login(orbitdb, dbAddr, rawKey)
     await account.initialized
     assert.strictEqual(account.status, 'READY')
     Object.keys(account._components)
       .map(x => assert.strictEqual(account[x].status, 'READY'))
+  })
+
+  it('instance exposes a keyCheck method', async () => {
+    const address = dbAddr.toString()
+    assert.strictEqual(await account.keyCheck(address, rawKey), true)
+    const newIndex = await PeerAccount.genAccountIndex(orbitdb)
+    assert.strictEqual(
+      await account.keyCheck(newIndex.dbAddr.toString(), rawKey),
+      false
+    )
+    assert.strictEqual(
+      await account.keyCheck(address, newIndex.rawKey),
+      false
+    )
   })
 })

@@ -18,10 +18,12 @@ const setLogOutputs = require('./utils').setLogOutputs
 const components = [Manifest, Comms]
 
 class PeerAccount {
-  constructor (orbitdb, accountIndex, options = {}) {
+  constructor (orbitdb, accountIndex, keyCheck, options = {}) {
     if (!orbitdb) throw new Error('orbitdb must be defined')
     if (!accountIndex) throw new Error('accountIndex must be defined')
+    if (!keyCheck) throw new Error('keyCheck must be defined')
     this._accountIndex = accountIndex
+    this.keyCheck = keyCheck
     this.root = this._accountIndex._docstore.address.root
     this.options = options
     this._components = components.reduce((a, c) => ({ ...a, [c.type]: c }))
@@ -123,25 +125,39 @@ class PeerAccount {
       if (!rawKey) throw new Error('rawKey must be defined')
 
       const orbitdbC = new OrbitdbController(orbitdb)
-      const dbAddr = orbitdbC.parseAddress(address)
-      const aesKey = await Index.importKey(rawKey)
-        .catch(e => {
-          console.error(e)
-          throw new Error('failed to import raw key')
-        })
 
-      if (!await Index.keyCheck(dbAddr, aesKey)) {
+      const keyCheck = async (addr, rk) => {
+        try {
+          if (addr.toString() !== address.toString()) return false
+          const dbAddr = orbitdbC.parseAddress(addr)
+          const aesKey = await Index.importKey(rk).catch(e => {
+            console.error(e)
+            throw new Error('failed to import raw key')
+          })
+          if (!await Index.keyCheck(dbAddr, aesKey)) return false
+          else return true
+        } catch (e) {
+          console.error(e)
+          return false
+        }
+      }
+      if (!await keyCheck(address, rawKey)) {
         console.error('key check failed on login')
-        throw new Error(`invalid account address '${address}' or rawKey`)
+        throw new Error('invalid account address or rawKey')
       }
 
+      const dbAddr = orbitdbC.parseAddress(address)
+      const aesKey = await Index.importKey(rawKey).catch(e => {
+        console.error(e)
+        throw new Error('failed to import raw key')
+      })
       const accountIndex = await Index.open(orbitdbC, dbAddr, aesKey)
         .catch(e => {
           console.error(e)
           throw new Error('failed to open account index')
         })
 
-      return new PeerAccount(orbitdb, accountIndex, options)
+      return new PeerAccount(orbitdb, accountIndex, keyCheck, options)
     } catch (e) {
       console.error(e)
       throw new Error('account login failed')
