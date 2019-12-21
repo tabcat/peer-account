@@ -1,12 +1,12 @@
 
 'use strict'
-const Session = require('../session')
+const Session = require('./session')
 const AsymChannel = require('./asymChannel')
 const Handshake = require('./handshake')
 const SymChannel = require('./symChannel')
 const Message = require('./message')
 const Profile = require('./profile')
-const SessionName = require('../sessionName')
+const SessionName = require('./sessionName')
 const Index = require('../encryptedIndex')
 const crypto = require('@tabcat/peer-account-crypto')
 

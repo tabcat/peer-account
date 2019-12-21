@@ -1,7 +1,7 @@
 
 'use strict'
-const Session = require('../session')
-const SessionName = require('../sessionName')
+const Session = require('./session')
+const SessionName = require('./sessionName')
 const crypto = require('@tabcat/peer-account-crypto')
 
 const status = {

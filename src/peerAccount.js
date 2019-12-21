@@ -2,8 +2,8 @@
 'use strict'
 const OrbitdbController = require('./orbitdbController')
 const Index = require('./encryptedIndex')
-const Manifest = require('./components/manifest')
-const Comms = require('./components/comms')
+const Manifest = require('./sessions/components/manifest')
+const Comms = require('./sessions/components/comms')
 const EventEmitter = require('events').EventEmitter
 
 const status = {

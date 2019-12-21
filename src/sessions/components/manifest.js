@@ -1,7 +1,7 @@
 
 'use strict'
-const Component = require('../component')
-const Index = require('../encryptedIndex')
+const Component = require('./component')
+const Index = require('../../encryptedIndex')
 
 const status = {
   INIT: 'INIT',
@@ -9,7 +9,7 @@ const status = {
   CLOSED: 'CLOSED',
   FAILED: 'FAILED'
 }
-const setStatus = require('../utils').setStatus(status)
+const setStatus = require('../../utils').setStatus(status)
 
 const manifestClosed = () => new Error('manifest closed')
 

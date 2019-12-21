@@ -1,7 +1,7 @@
 
 'use strict'
 const assert = require('assert')
-const SessionName = require('../src/sessionName')
+const SessionName = require('../src/sessions/sessionName')
 
 describe('SessionName', function () {
   it('generates a new offer name with specified type', () => {

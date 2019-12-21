@@ -1,7 +1,7 @@
 
 'use strict'
 const Channel = require('./channel')
-const SessionName = require('../sessionName')
+const SessionName = require('./sessionName')
 const crypto = require('@tabcat/peer-account-crypto')
 
 const status = {

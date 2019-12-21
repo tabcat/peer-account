@@ -6,8 +6,8 @@ const EventEmitter = require('events').EventEmitter
 const status = {
   PRE_INIT: 'PRE_INIT'
 }
-const setStatus = require('./utils').setStatus(status)
-const setLogOutputs = require('./utils').setLogOutputs
+const setStatus = require('../utils').setStatus(status)
+const setLogOutputs = require('../utils').setLogOutputs
 
 class Session {
   constructor (orbitdbC, offer, capability, options = {}) {

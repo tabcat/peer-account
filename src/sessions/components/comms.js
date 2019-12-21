@@ -1,10 +1,10 @@
 
 'use strict'
-const Component = require('../component')
-const Index = require('../encryptedIndex')
-const Profile = require('../sessions/profile')
-const AsymChannel = require('../sessions/asymChannel')
-const Contact = require('../sessions/contact')
+const Component = require('./component')
+const Index = require('../../encryptedIndex')
+const Profile = require('../profile')
+const AsymChannel = require('../asymChannel')
+const Contact = require('../contact')
 const SessionName = require('../sessionName')
 
 const status = {
@@ -13,7 +13,7 @@ const status = {
   READY: 'READY',
   FAILED: 'FAILED'
 }
-const setStatus = require('../utils').setStatus(status)
+const setStatus = require('../../utils').setStatus(status)
 
 const flatMap = (f, xs) =>
   xs.reduce((acc, x) => acc.concat(f(x)), [])
