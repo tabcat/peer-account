@@ -53,7 +53,7 @@ class Message extends Session {
       throw new Error('options.recipient must be defined')
     }
 
-    const aesKey = await crypto.aes.importKey(capability.aes)
+    const aesKey = await crypto.aes.importKey(new Uint8Array(capability.aes))
     const keyCheck = await aesKey.encrypt(
       crypto.util.str2ab(this.type),
       SessionName.parse(capability.name).iv
@@ -103,7 +103,7 @@ class Message extends Session {
       ? options.offer.name
       : options.name || SessionName.generate(this.type).toString()
     const aesKey = fromOffer
-      ? await crypto.aes.importKey(options.offer.aes)
+      ? await crypto.aes.importKey(new Uint8Array(options.offer.aes))
       : options.aesKey || await crypto.aes.generateKey(options.keyLen || 128)
 
     const idKey = options.idKey || name
@@ -160,7 +160,7 @@ class Message extends Session {
 
   async _aesKey () {
     if (this._aes) return this._aes
-    this._aes = await crypto.aes.importKey(this.offer.aes)
+    this._aes = await crypto.aes.importKey(new Uint8Array(this.offer.aes))
     return this._aes
   }
 

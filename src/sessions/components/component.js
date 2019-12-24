@@ -12,7 +12,7 @@ class Component extends Session {
       throw new Error('invalid capability')
     }
 
-    const aesKey = await crypto.aes.importKey(capability.aes)
+    const aesKey = await crypto.aes.importKey(new Uint8Array(capability.aes))
     const keyCheck = await aesKey.encrypt(
       crypto.util.str2ab(this.type),
       SessionName.parse(capability.name).iv

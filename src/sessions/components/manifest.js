@@ -26,7 +26,7 @@ class Manifest extends Component {
   async _initialize () {
     try {
       setStatus(this, status.INIT)
-      const aesKey = await Index.importKey(this.offer.aes)
+      const aesKey = await Index.importKey(new Uint8Array(this.offer.aes))
       const dbAddr = await Index.determineAddress(
         this._orbitdbC._orbitdb,
         {
