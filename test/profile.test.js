@@ -94,7 +94,7 @@ describe('Profile Session', function () {
   })
 
   it('accepts a profile offer from address', async () => {
-    profile2 = await Profile.fromAddress(orbitdbC2, profile1.address)
+    profile2 = await Profile.fromAddress(orbitdbC2, await profile1.address())
     await profile2.initialized
     assert.strictEqual(profile2.status, 'READY')
     assert.strictEqual(profile2.isOwner, false)

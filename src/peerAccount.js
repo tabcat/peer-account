@@ -3,7 +3,9 @@
 const OrbitdbController = require('./orbitdbController')
 const Index = require('./encryptedIndex')
 const Manifest = require('./sessions/components/manifest')
-const Comms = require('./sessions/components/comms')
+const Profiles = require('./sessions/components/profiles')
+const Inbox = require('./sessions/components/inbox')
+const Contacts = require('./sessions/components/contacts')
 const EventEmitter = require('events').EventEmitter
 
 const status = {
@@ -15,7 +17,9 @@ const status = {
 const setStatus = require('./utils').setStatus(status)
 const setLogOutputs = require('./utils').setLogOutputs
 
-const components = [Manifest, Comms]
+const components = [Manifest, Profiles, Inbox, Contacts]
+
+// const defaultOptions = {}
 
 class PeerAccount {
   constructor (orbitdb, accountIndex, keyCheck, options = {}) {
@@ -57,7 +61,7 @@ class PeerAccount {
         const component = doc
           // open the existing component session
           ? await c.open(
-            this._orbitdbC,
+            this,
             doc.offer,
             doc.capability,
             componentOptions
@@ -66,7 +70,7 @@ class PeerAccount {
             throw new Error('failed to open existing component session')
           })
           // generate the component session
-          : await c.offer(this._orbitdbC, componentOptions)
+          : await c.offer(this, componentOptions)
             .catch(e => {
               this.log.error(e)
               throw new Error('failed to create component session')
@@ -98,15 +102,12 @@ class PeerAccount {
     the account index is used to store the address of the component state
     to the component type.
     the account index is a wrapped orbitdb docstore.
-    the component state address is an orbitdb address.
 
     orbitdb is an instance of https://github.com/orbitdb/orbit-db
   */
   static async genAccountIndex (orbitdb) {
     if (!orbitdb) throw new Error('orbitdb must be defined')
-    return Index.generate(
-      new OrbitdbController(orbitdb)
-    )
+    return Index.generate(new OrbitdbController(orbitdb))
       .catch(e => {
         console.error(e)
         throw new Error('failed generating new account index')

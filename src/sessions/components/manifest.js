@@ -1,7 +1,6 @@
 
 'use strict'
 const Component = require('./component')
-const Index = require('../../encryptedIndex')
 
 const status = {
   INIT: 'INIT',
@@ -14,8 +13,8 @@ const setStatus = require('../../utils').setStatus(status)
 const manifestClosed = () => new Error('manifest closed')
 
 class Manifest extends Component {
-  constructor (orbitdbC, offer, capability, options) {
-    super(orbitdbC, offer, capability, options)
+  constructor (account, offer, capability, options) {
+    super(account, offer, capability, options)
     this.addAddr = this.addAddr.bind(this)
     this.delAddr = this.delAddr.bind(this)
     this._orbitdbC.events.on('openDb', this.addAddr)
@@ -26,32 +25,8 @@ class Manifest extends Component {
   async _initialize () {
     try {
       setStatus(this, status.INIT)
-      const aesKey = await Index.importKey(new Uint8Array(this.offer.aes))
-      const dbAddr = await Index.determineAddress(
-        this._orbitdbC._orbitdb,
-        {
-          name: this.offer.name,
-          options: {
-            ...this.options,
-            accessController: {
-              write: [this.offer.meta.owner.id]
-            },
-            meta: this.offer.meta
-          }
-        },
-        aesKey
-      )
-      this._state = await Index.open(
-        this._orbitdbC,
-        dbAddr,
-        aesKey,
-        {
-          identity: await this.constructor._identity(
-            this.capability.idKey,
-            this._orbitdbC._orbitdb.identity._provider
-          )
-        }
-      )
+      await this._attachState()
+
       this._state._docstore.events.once('closed', () => {
         setStatus(this, status.CLOSED)
         this.log('orbitdb closed index')
@@ -73,7 +48,7 @@ class Manifest extends Component {
     if (!this._orbitdbC.isValidAddress(address)) {
       throw new Error('address is invalid')
     }
-    if (!this.status === status.CLOSED) {
+    if (this.status === status.CLOSED) {
       this.log.error(`exists(${address}): failed, index is closed`)
       throw manifestClosed()
     }

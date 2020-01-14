@@ -40,14 +40,6 @@ class Session {
     }
   }
 
-  static async createOffer (capability, options = {}) { return {} }
-
-  static async verifyOffer (offer) { return true }
-
-  static async createCapability (options = {}) { return {} }
-
-  static async verifyCapability (capability) { return true }
-
   // generate identity for session capability
   static async _identity (id, identityProvider) {
     if (!id) throw new Error('id must be defined to create identity')
@@ -61,8 +53,8 @@ class Session {
     })
   }
 
-  static async open (orbitdbC, offer, capability, options = {}) {
-    if (!orbitdbC) throw new Error('orbitdbC must be defined')
+  static async open (p2p, offer, capability, options = {}) {
+    if (!p2p) throw new Error('p2p must be defined')
     if (!offer) throw new Error('offer must be defined')
     if (!capability) throw new Error('capability must be defined')
     if (!await this.verifyOffer(offer)) {
@@ -73,11 +65,12 @@ class Session {
         `tried to open ${this.type} session with invalid capability`
       )
     }
-    return new this(orbitdbC, offer, capability, options)
+    return new this(p2p, offer, capability, options)
   }
 
-  static async offer (orbitdbC, options = {}) {
-    if (!orbitdbC) throw new Error('orbitdbC must be defined')
+  static async offer (p2p, options = {}) {
+    if (!p2p) throw new Error('p2p must be defined')
+    const orbitdbC = p2p._orbitdbC || p2p
     const capability = await this.createCapability(
       {
         identityProvider: orbitdbC._orbitdb.identity._provider,
@@ -88,13 +81,14 @@ class Session {
       capability,
       options
     )
-    return this.open(orbitdbC, offer, capability, { log: options.log })
+    return this.open(p2p, offer, capability, { log: options.log })
   }
 
-  static async accept (orbitdbC, offer, options = {}) {
-    if (!orbitdbC) throw new Error('orbitdbC must be defined')
+  static async accept (p2p, offer, options = {}) {
+    if (!p2p) throw new Error('p2p must be defined')
     if (!offer) throw new Error('offer must be defined')
     if (!await this.verifyOffer(offer)) throw new Error('invalid offer')
+    const orbitdbC = p2p._orbitdbC || p2p
     const capability = await this.createCapability(
       {
         identityProvider: orbitdbC._orbitdb.identity._provider,
@@ -103,8 +97,16 @@ class Session {
         offer
       }
     )
-    return this.open(orbitdbC, offer, capability, { log: options.log })
+    return this.open(p2p, offer, capability, { log: options.log })
   }
+
+  static async createOffer (capability, options = {}) { return {} }
+
+  static async verifyOffer (offer) { return true }
+
+  static async createCapability (options = {}) { return {} }
+
+  static async verifyCapability (capability) { return true }
 
   // static async decline (orbitdbC, offer, options = {}) {}
 }

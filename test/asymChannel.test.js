@@ -103,7 +103,7 @@ describe('AsymChannel Session', function () {
   it('accepts an asym channel offer from address', async () => {
     asymChannel2 = await AsymChannel.fromAddress(
       orbitdbC2,
-      asymChannel1.address
+      await asymChannel1.address()
     )
     await asymChannel2.initialized
     assert.strictEqual(asymChannel2.status, 'LISTENING')

@@ -47,6 +47,7 @@ class AsymChannel extends Channel {
           }
         )
       }
+
       this._state = await this._orbitdbC.openDb({
         name: this.offer.name,
         type: 'docstore',
@@ -62,8 +63,9 @@ class AsymChannel extends Channel {
       this._supported = this.offer.meta.supported
       this.direction = this.offer.meta.owner.id === this.capability.id
         ? 'recipient' : 'sender'
-      this._state.events.on('replicated', () => this.events.emit('update'))
-      this._state.events.on('write', () => this.events.emit('update'))
+
+      this._state.events.on('replicated', () => this.events.emit('replicated'))
+      this._state.events.on('write', () => this.events.emit('write'))
       setStatus(this, status.LISTENING)
     } catch (e) {
       setStatus(this, status.FAILED)
@@ -73,67 +75,6 @@ class AsymChannel extends Channel {
   }
 
   static get type () { return 'asym_channel' }
-
-  static async createOffer (capability, options = {}) {
-    if (!this.verifyCapability(capability)) {
-      throw new Error('invalid capability')
-    }
-
-    return {
-      name: capability.name,
-      meta: {
-        sessionType: this.type,
-        owner: { id: capability.id, key: capability.key },
-        lifetime: options.lifetime || 604800000, // one week in ms
-        supported: options.supported || [],
-        curve: capability.curve
-      }
-    }
-  }
-
-  static async verifyOffer (offer) {
-    if (!offer) throw new Error('offer must be defined')
-    if (!offer.name || !SessionName.isValid(offer.name)) return false
-    if (SessionName.parse(offer.name).type !== this.type) return false
-    if (!offer.meta) return false
-    const { meta } = offer
-    if (meta.sessionType !== this.type) return false
-    if (
-      !meta.owner || !meta.lifetime || !meta.supported || !meta.curve
-    ) return false
-    return true
-  }
-
-  static async createCapability (options = {}) {
-    if (!options.identityProvider) {
-      throw new Error('options.identityProvider must be defined')
-    }
-    const fromOffer = options.offer && await this.verifyOffer(options.offer)
-
-    const name = fromOffer
-      ? options.offer.name
-      : options.name || SessionName.generate(this.type).toString()
-    const curve = fromOffer
-      ? options.offer.meta.curve
-      : options.curve || 'P-256'
-
-    const idKey = options.idKey || name
-    const identity = await this._identity(idKey, options.identityProvider)
-    const { key, jwk } = await crypto.ecdh.generateKey(curve)
-
-    return { name, idKey, id: identity.id, key: [...key], jwk, curve }
-  }
-
-  static async verifyCapability (capability) {
-    if (!capability) throw new Error('capability must be defined')
-    if (!capability.name || !SessionName.isValid(capability.name)) return false
-    if (SessionName.parse(capability.name).type !== this.type) return false
-    if (
-      !capability.idKey || !capability.id || !capability.key ||
-      !capability.jwk || !capability.curve
-    ) return false
-    return true
-  }
 
   static async fromAddress (orbitdbC, address, options = {}) {
     if (!orbitdbC) throw new Error('orbitdbC must be defined')
@@ -150,7 +91,10 @@ class AsymChannel extends Channel {
     return new AsymChannel(orbitdbC, offer, null, options)
   }
 
-  get address () { return this._state.address }
+  async address () {
+    await this.initialized
+    return this._state.address
+  }
 
   async sendOffer (offer) {
     await this.initialized
@@ -283,6 +227,67 @@ class AsymChannel extends Channel {
     } catch (e) {
       this.log.error(e)
     }
+  }
+
+  static async createOffer (capability, options = {}) {
+    if (!this.verifyCapability(capability)) {
+      throw new Error('invalid capability')
+    }
+
+    return {
+      name: capability.name,
+      meta: {
+        sessionType: this.type,
+        owner: { id: capability.id, key: capability.key },
+        lifetime: options.lifetime || 604800000, // one week in ms
+        supported: options.supported || [],
+        curve: capability.curve
+      }
+    }
+  }
+
+  static async verifyOffer (offer) {
+    if (!offer) throw new Error('offer must be defined')
+    if (!offer.name || !SessionName.isValid(offer.name)) return false
+    if (SessionName.parse(offer.name).type !== this.type) return false
+    if (!offer.meta) return false
+    const { meta } = offer
+    if (meta.sessionType !== this.type) return false
+    if (
+      !meta.owner || !meta.lifetime || !meta.supported || !meta.curve
+    ) return false
+    return true
+  }
+
+  static async createCapability (options = {}) {
+    if (!options.identityProvider) {
+      throw new Error('options.identityProvider must be defined')
+    }
+    const fromOffer = options.offer && await this.verifyOffer(options.offer)
+
+    const name = fromOffer
+      ? options.offer.name
+      : options.name || SessionName.generate(this.type).toString()
+    const curve = fromOffer
+      ? options.offer.meta.curve
+      : options.curve || 'P-256'
+
+    const idKey = options.idKey || name
+    const identity = await this._identity(idKey, options.identityProvider)
+    const { key, jwk } = await crypto.ecdh.generateKey(curve)
+
+    return { name, idKey, id: identity.id, key: [...key], jwk, curve }
+  }
+
+  static async verifyCapability (capability) {
+    if (!capability) throw new Error('capability must be defined')
+    if (!capability.name || !SessionName.isValid(capability.name)) return false
+    if (SessionName.parse(capability.name).type !== this.type) return false
+    if (
+      !capability.idKey || !capability.id || !capability.key ||
+      !capability.jwk || !capability.curve
+    ) return false
+    return true
   }
 }
 

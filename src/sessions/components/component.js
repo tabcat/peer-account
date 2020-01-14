@@ -2,10 +2,68 @@
 'use strict'
 const Session = require('../session')
 const SessionName = require('../sessionName')
+const Index = require('../../encryptedIndex')
 const crypto = require('@tabcat/peer-account-crypto')
 
 class Component extends Session {
+  constructor (account, offer, capability, options) {
+    super(account._orbitdbC, offer, capability, options)
+    this._account = account
+  }
+
   static get type () { return 'component' }
+
+  async _attachState () {
+    if (this._state !== null) { return }
+    const aesKey = await Index.importKey(new Uint8Array(this.offer.aes))
+    const dbAddr = await Index.determineAddress(
+      this._orbitdbC._orbitdb,
+      {
+        name: this.offer.name,
+        options: {
+          ...this.options,
+          accessController: {
+            write: [this.offer.meta.owner.id]
+          },
+          meta: this.offer.meta
+        }
+      },
+      aesKey
+    )
+    this._state = await Index.open(
+      this._orbitdbC,
+      dbAddr,
+      aesKey,
+      {
+        identity: await this.constructor._identity(
+          this.capability.idKey,
+          this._orbitdbC._orbitdb.identity._provider
+        )
+      }
+    )
+  }
+
+  async _matchRecord (recordId) {
+    return this._state.match(recordId)
+  }
+
+  async _getRecords (recordType) {
+    return this._state.get(recordType)
+  }
+
+  async _setRecord (key, value) {
+    return this._state.set(key, value)
+  }
+
+  async _queryRecords (mapper, prefix = '') {
+    if (typeof mapper !== 'function') {
+      throw new Error('mapper must be type function')
+    }
+    return this._state.query(doc =>
+      doc[this._state._indexBy].startsWith(prefix) &&
+      mapper(doc)
+    )
+  }
 
   static async createOffer (capability, options = {}) {
     if (!this.verifyCapability(capability)) {
@@ -76,28 +134,6 @@ class Component extends Session {
     if (!capability.idKey || !capability.id) return false
     if (!capability.aes) return false
     return true
-  }
-
-  async _matchRecord (recordId) {
-    return this._state.match(recordId)
-  }
-
-  async _getRecords (recordType) {
-    return this._state.get(recordType)
-  }
-
-  async _setRecord (key, value) {
-    return this._state.set(key, value)
-  }
-
-  async _queryRecords (mapper, prefix = '') {
-    if (typeof mapper !== 'function') {
-      throw new Error('mapper must be type function')
-    }
-    return this._state.query(doc =>
-      doc[this._state._indexBy].startsWith(prefix) &&
-      mapper(doc)
-    )
   }
 }
 

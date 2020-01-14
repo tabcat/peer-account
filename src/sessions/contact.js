@@ -5,13 +5,13 @@ const AsymChannel = require('./asymChannel')
 const Handshake = require('./handshake')
 const SymChannel = require('./symChannel')
 const Message = require('./message')
-const Profile = require('./profile')
 const SessionName = require('./sessionName')
 const Index = require('../encryptedIndex')
 const crypto = require('@tabcat/peer-account-crypto')
 
 const status = {
   INIT: 'INIT',
+  READ_PROFILE: 'READ_PROFILE',
   SEND_OFFER: 'SEND_OFFER',
   CHECK_HANDSHAKE: 'CHECK_HANDSHAKE',
   HANDSHAKE: 'HANDSHAKE',
@@ -23,7 +23,7 @@ const setStatus = require('../utils').setStatus(status)
 class Contact extends Session {
   constructor (orbitdbC, offer, capability, options = {}) {
     super(orbitdbC, offer, capability, options)
-    this.profile = null
+    this._profilesComponent = options.profilesComponent || null
     this.channel = null
     this.message = null
     this.initialized = this._initialize()
@@ -33,6 +33,41 @@ class Contact extends Session {
     try {
       setStatus(this, status.INIT)
       // handles fromAddress creation
+      if (this.offer.name && this.offer.profile && !this.offer.meta) {
+        setStatus(this, status.READ_PROFILE)
+        if (!this._profilesComponent) {
+          throw new Error(
+            'options.profilesComponent must be defined to add from profile'
+          )
+        }
+        const profile = await this._profilesComponent
+          .profileOpen(this.offer.profile)
+        await profile.initialized
+        const asymChannelAddr = await new Promise((resolve, reject) => {
+          const poll = async () => {
+            const requestField =
+              await profile.getField(this.options.field || 'inbox')
+            if (requestField !== undefined) validate(requestField)
+          }
+          const validate = (requestField) => {
+            profile._state.events.removeListener('replicated', poll)
+            try {
+              resolve(this._orbitdbC.parseAddress(requestField))
+            } catch (e) {
+              this.log.error(
+                `failed to get a valid inbox channel address from profile.
+                ${requestField}`
+              )
+              reject(e)
+            }
+          }
+          profile._state.events.on('replicated', poll)
+        })
+        this._offer = {
+          ...this.offer,
+          channel: asymChannelAddr
+        }
+      }
       if (this.offer.name && this.offer.channel && !this.offer.meta) {
         setStatus(this, status.SEND_OFFER)
         const asymChannel = await AsymChannel.fromAddress(
@@ -98,8 +133,6 @@ class Contact extends Session {
       const shake = await handshake.state()
       const aesKey = await crypto.aes.importKey(new Uint8Array(shake.aes))
       const idKey = shake.idKey
-      const myRole = handshake.direction
-      const theirRole = myRole === 'recipient' ? 'sender' : 'recipient'
 
       const dbAddr = await Index.determineAddress(
         this._orbitdbC._orbitdb,
@@ -173,50 +206,55 @@ class Contact extends Session {
         { log: this.log }
       )
 
-      const profileDocKey = (role) => `${Profile.type}-${role}`
-      if (!await this._state.match(profileDocKey(myRole))) {
-        await this._state.set(
-          profileDocKey(myRole),
-          this.capability.profile
-        )
-      }
-      if (!await this._state.match(profileDocKey(theirRole))) {
-        await new Promise(resolve => {
-          const onReplicated = async () => {
-            if (await this._state.match(profileDocKey(theirRole))) {
-              this._state._docstore.events.removeListener(
-                'replicated',
-                onReplicated
-              )
-              resolve()
-            }
-          }
-          this._state._docstore.events.on('replicated', onReplicated)
-        })
-      }
-      const profileDoc = await this._state.match(profileDocKey(theirRole))
-      if (!profileDoc) {
-        throw new Error('their profile doc should be defined now')
-      }
-      const profile = await Profile.accept(this._orbitdbC, profileDoc)
-
-      await Promise.all([
-        symChannel.initialized, message.initialized, profile.initialized
-      ])
+      await Promise.all([symChannel.initialized, message.initialized])
 
       this.channel = symChannel
       this.message = message
-      this.profile = profile
 
       setStatus(this, status.READY)
     } catch (e) {
       setStatus(this, status.FAILED)
+      console.log(e)
       this.log.error(e)
       throw new Error(`${Contact.type} failed initialization`)
     }
   }
 
   static get type () { return 'contact' }
+
+  // creates an instance from a profile address
+  static fromProfile (orbitdbC, profileAddress, options = {}) {
+    if (!orbitdbC.isValidAddress(profileAddress)) {
+      throw new Error('invalid profile address provided')
+    }
+    const offer = {
+      name: options.name || SessionName.generate(this.type).name,
+      profile: profileAddress
+    }
+    return new Contact(
+      orbitdbC,
+      offer,
+      null,
+      options
+    )
+  }
+
+  // creates an instance from a channel address that accepts contact offers
+  static fromAsymChannel (orbitdbC, channelAddress, options = {}) {
+    if (!orbitdbC.isValidAddress(channelAddress)) {
+      throw new Error('invalid channel address provided')
+    }
+    const offer = {
+      name: options.name || SessionName.generate(this.type).name,
+      channel: channelAddress
+    }
+    return new Contact(
+      orbitdbC,
+      offer,
+      null,
+      options
+    )
+  }
 
   static async createOffer (capability, options = {}) {
     if (!await this.verifyCapability(capability)) {
@@ -225,6 +263,8 @@ class Contact extends Session {
 
     return {
       name: capability.name,
+      sender: options.sender || {},
+      recipient: options.recipient || {},
       [Handshake.type]: await Handshake.createOffer(
         capability[Handshake.type],
         options[Handshake.type]
@@ -239,6 +279,7 @@ class Contact extends Session {
     if (!offer) throw new Error('offer must be defined')
     if (!offer.name || !SessionName.isValid(offer.name)) return false
     if (SessionName.parse(offer.name).type !== this.type) return false
+    if (!offer.sender || !offer.recipient) return false
     if (!offer.meta || !offer.info) return false
     if (
       !offer[Handshake.type] ||
@@ -255,10 +296,6 @@ class Contact extends Session {
   static async createCapability (options = {}) {
     if (!options.identityProvider) {
       throw new Error('options.identityProvider must be defined')
-    }
-    if (!options.profile) throw new Error('options.profile must be defined')
-    if (!Profile.verifyOffer(options.profile)) {
-      throw new Error('invalid profile offer')
     }
     const fromOffer = options.offer && await this.verifyOffer(options.offer)
 
@@ -294,8 +331,7 @@ class Contact extends Session {
         }
       ),
       [SymChannel.type]: { name: symChannelName },
-      [Message.type]: { name: messageName },
-      [Profile.type]: options.profile
+      [Message.type]: { name: messageName }
     }
   }
 
@@ -308,38 +344,24 @@ class Contact extends Session {
     if (
       !capability[SymChannel.type] || !capability[SymChannel.type].name
     ) return false
-    if (!SessionName.isValid(capability[SymChannel.type].name)) return false
     if (
-      SessionName.parse(capability[SymChannel.type].name).type !==
-        SymChannel.type
+      !SessionName.isValid(capability[SymChannel.type].name)
+    ) return false
+    if (
+      SessionName.parse(
+        capability[SymChannel.type].name
+      ).type !== SymChannel.type
     ) return false
     if (
       !capability[Message.type] || !capability[Message.type].name
     ) return false
     if (!SessionName.isValid(capability[Message.type].name)) return false
     if (
-      SessionName.parse(capability[Message.type].name).type !==
-        Message.type
-    ) return false
-    if (
-      !capability[Profile.type] ||
-      !await Profile.verifyOffer(capability[Profile.type])
+      SessionName.parse(
+        capability[Message.type].name
+      ).type !== Message.type
     ) return false
     return true
-  }
-
-  // creates an instance from a channel address that accepts contact offers
-  static fromAddress (orbitdbC, address, options = {}) {
-    const offer = {
-      name: SessionName.generate(this.type).name,
-      channel: address
-    }
-    return new Contact(
-      orbitdbC,
-      offer,
-      null,
-      options
-    )
   }
 }
 

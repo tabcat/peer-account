@@ -45,6 +45,71 @@ class Message extends Session {
 
   static get type () { return 'sym_channel' }
 
+  async sendMessage (msg) {
+    await this.initialized
+    if (!msg) throw new Error('msg must be defined')
+
+    const envelope = {
+      msg,
+      _session: {
+        name: this.offer.name,
+        address: this._state.address.toString()
+      }
+    }
+    const { cipherbytes, iv } = await this._encrypt(envelope)
+
+    return this._state.add({
+      cipherbytes: [...cipherbytes],
+      iv: [...iv]
+    })
+  }
+
+  async readMessages (options) {
+    const events = await this._state.iterator(options).collect()
+    return Promise.all(
+      events.map(async (e) => {
+        if (
+          !Array.isArray(e.payload.value.cipherbytes) ||
+          !Array.isArray(e.payload.value.iv)
+        ) return undefined
+        const [cipherbytes, iv] = ['cipherbytes', 'iv']
+          .map((k) => new Uint8Array(e.payload.value[k]))
+        const value = await this._decrypt(cipherbytes, iv)
+          .catch(e => { this.log.error(e); return undefined })
+        return { ...e, payload: { ...e.payload, value } }
+      })
+    ).then(events => events.filter(x => x !== undefined))
+  }
+
+  async _aesKey () {
+    if (this._aes) return this._aes
+    this._aes = await crypto.aes.importKey(new Uint8Array(this.offer.aes))
+    return this._aes
+  }
+
+  async _encrypt (msg, iv) {
+    try {
+      const key = await this._aesKey()
+      iv = iv || crypto.randomBytes(12)
+      return key.encrypt(
+        crypto.util.str2ab(JSON.stringify(msg)),
+        iv
+      )
+    } catch (e) {
+      this.log.error(e)
+    }
+  }
+
+  async _decrypt (cipherbytes, iv) {
+    try {
+      const key = await this._aesKey()
+      const decrypted = await key.decrypt(cipherbytes, iv)
+      return JSON.parse(crypto.util.ab2str(decrypted.buffer))
+    } catch (e) {
+      this.log.error(e)
+    }
+  }
+
   static async createOffer (capability, options = {}) {
     if (!this.verifyCapability(capability)) {
       throw new Error('invalid capability')
@@ -120,71 +185,6 @@ class Message extends Session {
     if (!capability.idKey || !capability.id) return false
     if (!capability.aes) return false
     return true
-  }
-
-  async sendMessage (msg) {
-    await this.initialized
-    if (!msg) throw new Error('msg must be defined')
-
-    const envelope = {
-      msg,
-      _session: {
-        name: this.offer.name,
-        address: this._state.address.toString()
-      }
-    }
-    const { cipherbytes, iv } = await this._encrypt(envelope)
-
-    return this._state.add({
-      cipherbytes: [...cipherbytes],
-      iv: [...iv]
-    })
-  }
-
-  async readMessages (options) {
-    const events = await this._state.iterator(options).collect()
-    return Promise.all(
-      events.map(async (e) => {
-        if (
-          !Array.isArray(e.payload.value.cipherbytes) &&
-          !Array.isArray(e.payload.value.iv)
-        ) return undefined
-        const [cipherbytes, iv] = ['cipherbytes', 'iv']
-          .map((k) => new Uint8Array(e.payload.value[k]))
-        const value = await this._decrypt(cipherbytes, iv)
-          .catch(e => { this.log.error(e); return undefined })
-        return { ...e, payload: { ...e.payload, value } }
-      })
-    ).then(events => events.filter(x => x !== undefined))
-  }
-
-  async _aesKey () {
-    if (this._aes) return this._aes
-    this._aes = await crypto.aes.importKey(new Uint8Array(this.offer.aes))
-    return this._aes
-  }
-
-  async _encrypt (msg, iv) {
-    try {
-      const key = await this._aesKey()
-      iv = iv || crypto.randomBytes(12)
-      return key.encrypt(
-        crypto.util.str2ab(JSON.stringify(msg)),
-        iv
-      )
-    } catch (e) {
-      this.log.error(e)
-    }
-  }
-
-  async _decrypt (cipherbytes, iv) {
-    try {
-      const key = await this._aesKey()
-      const decrypted = await key.decrypt(cipherbytes, iv)
-      return JSON.parse(crypto.util.ab2str(decrypted.buffer))
-    } catch (e) {
-      this.log.error(e)
-    }
   }
 }
 

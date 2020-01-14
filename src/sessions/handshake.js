@@ -62,63 +62,6 @@ class Handshake extends Session {
 
   static get type () { return 'handshake' }
 
-  static async createOffer (capability, options = {}) {
-    if (!await this.verifyCapability(capability)) {
-      throw new Error('invalid capability')
-    }
-    if (!options.recipient) {
-      throw new Error('options.recipient must be defined')
-    }
-
-    return {
-      name: capability.name,
-      sender: options.sender || capability.id,
-      recipient: options.recipient,
-      meta: { sessionType: this.type, curve: capability.curve }
-    }
-  }
-
-  static async verifyOffer (offer) {
-    if (!offer) throw new Error('offer must be defined')
-    if (!offer.name || !SessionName.isValid(offer.name)) return false
-    if (SessionName.parse(offer.name).type !== this.type) return false
-    if (!offer.sender || !offer.recipient || !offer.meta) return false
-    if (!offer.meta.sessionType || !offer.meta.curve) return false
-    if (offer.meta.sessionType !== this.type) return false
-    return true
-  }
-
-  static async createCapability (options = {}) {
-    if (!options.identityProvider) {
-      throw new Error('options.identityProvider must be defined')
-    }
-    const fromOffer = options.offer && await this.verifyOffer(options.offer)
-
-    const name = fromOffer
-      ? options.offer.name
-      : options.name || SessionName.generate(this.type).toString()
-    const curve = fromOffer
-      ? options.offer.meta.curve
-      : options.curve || 'P-256'
-
-    const idKey = options.idKey || name
-    const identity = await this._identity(idKey, options.identityProvider)
-    const { key, jwk } = await crypto.ecdh.generateKey(curve)
-
-    return { name, idKey, id: identity.id, key: [...key], jwk, curve }
-  }
-
-  static async verifyCapability (capability) {
-    if (!capability) throw new Error('capability must be defined')
-    if (!capability.name || !SessionName.isValid(capability.name)) return false
-    if (SessionName.parse(capability.name).type !== this.type) return false
-    if (
-      !capability.idKey || !capability.id || !capability.key ||
-      !capability.jwk || !capability.curve
-    ) return false
-    return true
-  }
-
   async start () {
     await this.initialized
     if (this._listening) { return }
@@ -309,6 +252,63 @@ class Handshake extends Session {
     } catch (e) {
       this.log.error(e)
     }
+  }
+
+  static async createOffer (capability, options = {}) {
+    if (!await this.verifyCapability(capability)) {
+      throw new Error('invalid capability')
+    }
+    if (!options.recipient) {
+      throw new Error('options.recipient must be defined')
+    }
+
+    return {
+      name: capability.name,
+      sender: options.sender || capability.id,
+      recipient: options.recipient,
+      meta: { sessionType: this.type, curve: capability.curve }
+    }
+  }
+
+  static async verifyOffer (offer) {
+    if (!offer) throw new Error('offer must be defined')
+    if (!offer.name || !SessionName.isValid(offer.name)) return false
+    if (SessionName.parse(offer.name).type !== this.type) return false
+    if (!offer.sender || !offer.recipient || !offer.meta) return false
+    if (!offer.meta.sessionType || !offer.meta.curve) return false
+    if (offer.meta.sessionType !== this.type) return false
+    return true
+  }
+
+  static async createCapability (options = {}) {
+    if (!options.identityProvider) {
+      throw new Error('options.identityProvider must be defined')
+    }
+    const fromOffer = options.offer && await this.verifyOffer(options.offer)
+
+    const name = fromOffer
+      ? options.offer.name
+      : options.name || SessionName.generate(this.type).toString()
+    const curve = fromOffer
+      ? options.offer.meta.curve
+      : options.curve || 'P-256'
+
+    const idKey = options.idKey || name
+    const identity = await this._identity(idKey, options.identityProvider)
+    const { key, jwk } = await crypto.ecdh.generateKey(curve)
+
+    return { name, idKey, id: identity.id, key: [...key], jwk, curve }
+  }
+
+  static async verifyCapability (capability) {
+    if (!capability) throw new Error('capability must be defined')
+    if (!capability.name || !SessionName.isValid(capability.name)) return false
+    if (SessionName.parse(capability.name).type !== this.type) return false
+    if (
+      !capability.idKey || !capability.id || !capability.key ||
+      !capability.jwk || !capability.curve
+    ) return false
+    return true
   }
 }
 

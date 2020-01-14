@@ -23,7 +23,6 @@ describe('Contact Session', function () {
   this.timeout(timeout)
 
   let ipfs1, ipfs2, orbitdbC1, orbitdbC2, contact1, contact2, identity2
-  let profile1, profile2
 
   const idKey2 = 'idKey2'
 
@@ -70,10 +69,6 @@ describe('Contact Session', function () {
       idKey2,
       orbitdbC2._orbitdb.identity._provider
     )
-    profile1 = await Profile.offer(orbitdbC1)
-    await profile1.initialized
-    profile2 = await Profile.offer(orbitdbC2)
-    await profile2.initialized
     await connectPeers(ipfs1, ipfs2)
   })
 
@@ -97,22 +92,16 @@ describe('Contact Session', function () {
       c1.message._state.address.toString(),
       c2.message._state.address.toString()
     )
-    assert.notStrictEqual(
-      c1.profile._state.address.toString(),
-      c2.profile._state.address.toString()
-    )
     assert.strictEqual(c1.channel.status, 'LISTENING')
     assert.strictEqual(c2.channel.status, 'LISTENING')
     assert.strictEqual(c1.message.status, 'READY')
     assert.strictEqual(c2.message.status, 'READY')
-    assert.strictEqual(c1.profile.status, 'READY')
-    assert.strictEqual(c2.profile.status, 'READY')
   }
 
   it('creates a contact offer and opens the instance', async () => {
     contact1 = await Contact.offer(
       orbitdbC1,
-      { handshake: { recipient: identity2.id }, profile: profile1.offer }
+      { handshake: { recipient: identity2.id } }
     )
     await new Promise(resolve => {
       contact1.events.once('status:HANDSHAKE', resolve)
@@ -124,7 +113,7 @@ describe('Contact Session', function () {
     contact2 = await Contact.accept(
       orbitdbC2,
       contact1.offer,
-      { handshake: { idKey: idKey2 }, profile: profile2.offer }
+      { handshake: { idKey: idKey2 } }
     )
     await Promise.all([contact1.initialized, contact2.initialized])
     checkContacts(contact1, contact2)
@@ -136,10 +125,9 @@ describe('Contact Session', function () {
       { supported: [Contact.type] }
     )
     await asymChannel1.initialized
-    contact2 = await Contact.fromAddress(
+    contact2 = await Contact.fromAsymChannel(
       orbitdbC2,
-      asymChannel1.address,
-      { profile: profile2.offer }
+      await asymChannel1.address()
     )
     await new Promise(resolve => {
       asymChannel1._state.events.once('replicated', resolve)
@@ -150,10 +138,58 @@ describe('Contact Session', function () {
     contact1 = await Contact.accept(
       orbitdbC1,
       offer,
+      { handshake: { idKey: asymChannel1.capability.idKey } }
+    )
+    await Promise.all([contact1.initialized, contact2.initialized])
+    checkContacts(contact1, contact2)
+  })
+
+  it('contact setup from a profile address', async () => {
+    const profile1 = await Profile.offer(orbitdbC1)
+    const profile2 = await Profile.offer(orbitdbC2)
+    await Promise.all([profile1.initialized, profile2.initialized])
+
+    const asymChannel1 = await AsymChannel.offer(
+      orbitdbC1,
+      { supported: [Contact.type] }
+    )
+    await profile1.setField('inbox', (await asymChannel1.address()).toString())
+    // this is not a real profilesComponent, just used for this test
+    const profilesComponent = {
+      profileOpen: (profileAddress) => Profile.fromAddress(
+        orbitdbC2,
+        profileAddress
+      )
+    }
+    const contact2 = await Contact.fromProfile(
+      orbitdbC2,
+      await profile1.address(),
       {
-        handshake: { idKey: asymChannel1.capability.idKey },
-        profile: profile1.offer
+        profilesComponent,
+        // sender and recipient fields are optional
+        sender: { profile: (await profile2.address()).toString() },
+        recipient: { profile: (await profile1.address()).toString() }
       }
+    )
+
+    await new Promise(resolve => {
+      asymChannel1._state.events.once('replicated', resolve)
+    })
+    const offer = await asymChannel1.getOffer(
+      SessionName.parse(contact2.offer.name).id
+    )
+    assert.strictEqual(
+      (await profile2.address()).toString(),
+      offer.sender.profile
+    )
+    assert.strictEqual(
+      (await profile1.address()).toString(),
+      offer.recipient.profile
+    )
+    contact1 = await Contact.accept(
+      orbitdbC1,
+      offer,
+      { handshake: { idKey: asymChannel1.capability.idKey } }
     )
     await Promise.all([contact1.initialized, contact2.initialized])
     checkContacts(contact1, contact2)
