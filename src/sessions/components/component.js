@@ -6,9 +6,9 @@ const Index = require('../../encryptedIndex')
 const crypto = require('@tabcat/peer-account-crypto')
 
 class Component extends Session {
-  constructor (account, offer, capability, options) {
-    super(account._orbitdbC, offer, capability, options)
-    this._account = account
+  constructor (p2p, offer, capability, options) {
+    super(p2p, offer, capability, options)
+    this._account = p2p._orbitdbC ? p2p : null
   }
 
   static get type () { return 'component' }

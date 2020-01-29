@@ -5,7 +5,7 @@ const AsymChannel = require('./asymChannel')
 const Handshake = require('./handshake')
 const SymChannel = require('./symChannel')
 const Message = require('./message')
-const SessionName = require('./sessionName')
+const SessionId = require('./sessionId')
 const Index = require('../encryptedIndex')
 const crypto = require('@tabcat/peer-account-crypto')
 
@@ -24,8 +24,8 @@ class Contact extends Session {
   constructor (orbitdbC, offer, capability, options = {}) {
     super(orbitdbC, offer, capability, options)
     this._profilesComponent = options.profilesComponent || null
-    this.channel = null
-    this.message = null
+    this.channelSession = null
+    this.messageSession = null
     this.initialized = this._initialize()
   }
 
@@ -68,11 +68,11 @@ class Contact extends Session {
           channel: asymChannelAddr
         }
       }
-      if (this.offer.name && this.offer.channel && !this.offer.meta) {
+      if (this.offer.name && this.offer.asym_channel && !this.offer.meta) {
         setStatus(this, status.SEND_OFFER)
         const asymChannel = await AsymChannel.fromAddress(
           this._orbitdbC,
-          this.offer.channel,
+          this.offer.asym_channel,
           { log: this.log }
         )
         await asymChannel.initialized
@@ -105,6 +105,10 @@ class Contact extends Session {
         this._capability = capability
         this.log('contact offer sent')
       }
+      if (
+        !await this.verifyOffer(this.offer) &&
+        !await this.verifyCapability(this.capability)
+      ) throw new Error('invalid offer or capability properties')
 
       setStatus(this, status.CHECK_HANDSHAKE)
       const handshake = await Handshake.open(
@@ -177,12 +181,6 @@ class Contact extends Session {
           supported: ['*']
         }
       )
-      const symChannel = await SymChannel.open(
-        this._orbitdbC,
-        symChannelOffer,
-        symChannelCapability,
-        { log: this.log }
-      )
 
       const messageCapability = await SymChannel.createCapability(
         {
@@ -199,17 +197,13 @@ class Contact extends Session {
           recipient: shake.recipient.id
         }
       )
-      const message = await Message.open(
-        this._orbitdbC,
-        messageOffer,
-        messageCapability,
-        { log: this.log }
-      )
 
-      await Promise.all([symChannel.initialized, message.initialized])
-
-      this.channel = symChannel
-      this.message = message
+      this.channelSession = () => {
+        return { offer: symChannelOffer, capability: symChannelCapability }
+      }
+      this.messageSession = () => {
+        return { offer: messageOffer, capability: messageCapability }
+      }
 
       setStatus(this, status.READY)
     } catch (e) {
@@ -221,40 +215,6 @@ class Contact extends Session {
   }
 
   static get type () { return 'contact' }
-
-  // creates an instance from a profile address
-  static fromProfile (orbitdbC, profileAddress, options = {}) {
-    if (!orbitdbC.isValidAddress(profileAddress)) {
-      throw new Error('invalid profile address provided')
-    }
-    const offer = {
-      name: options.name || SessionName.generate(this.type).name,
-      profile: profileAddress
-    }
-    return new Contact(
-      orbitdbC,
-      offer,
-      null,
-      options
-    )
-  }
-
-  // creates an instance from a channel address that accepts contact offers
-  static fromAsymChannel (orbitdbC, channelAddress, options = {}) {
-    if (!orbitdbC.isValidAddress(channelAddress)) {
-      throw new Error('invalid channel address provided')
-    }
-    const offer = {
-      name: options.name || SessionName.generate(this.type).name,
-      channel: channelAddress
-    }
-    return new Contact(
-      orbitdbC,
-      offer,
-      null,
-      options
-    )
-  }
 
   static async createOffer (capability, options = {}) {
     if (!await this.verifyCapability(capability)) {

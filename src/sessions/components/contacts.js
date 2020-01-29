@@ -1,8 +1,8 @@
 
 'use strict'
-const QueueComponent = require('./queueComponent')
+const SessionManager = require('./sessionManager')
 const Contact = require('../contact')
-const SessionName = require('../sessionName')
+const SessionId = require('../sessionId')
 
 const status = {
   PRE_INIT: 'PRE_INIT',
@@ -12,23 +12,26 @@ const status = {
 }
 const setStatus = require('../../utils').setStatus(status)
 
-class Contacts extends QueueComponent {
+class Contacts extends SessionManager {
   constructor (account, offer, capability, options) {
-    super(account, offer, capability, options)
-    this._contacts = {}
-    this._queue = { _contactAdd: {}, _contactOpen: {}, _contactAccept: {} }
+    super(account, offer, capability, { ...options, Session: Contact })
+    this._onOpenedSession = this.onOpenedSession.bind(this)
+    this.events.on('openedSession', this._onOpenedSession)
     this.initialized = this._initialize()
   }
 
+  get type () { return 'contacts' }
+
   async _initialize () {
     try {
-      await this._account.profiles.initialized
       setStatus(this, status.INIT)
       await this._attachState()
 
       if (this.options.load !== false) {
         this._getRecords(Contact.type)
-          .then(docs => docs.map((doc) => this.openContact(doc.name)))
+          .then(records => records.map(
+            ({ recordId }) => this.contactBy(recordId))
+          )
       }
 
       setStatus(this, status.READY)
@@ -39,183 +42,62 @@ class Contacts extends QueueComponent {
     }
   }
 
-  static get type () { return 'contacts' }
-
-  contactAdd (profileAddress, options = {}) {
-    const funcKey = '_contactAdd'
-    return this._queueHandler({ funcKey, params: [profileAddress, options] })
+  async contactBy (profile) {
+    return this.sessionBy(profile.toString())
   }
 
-  contactOpen (sessionName) {
-    const funcKey = '_contactOpen'
-    return this._queueHandler({ funcKey, params: [sessionName] })
+  async contactAdd (profile, options) {
+    const metadata = { origin: options.origin || profile }
+    if (await this.existId(profile.toString())) {
+      throw new Error('contact already added')
+    }
+    options = { ...options, metadata, recordId: profile.toString() }
+    return this._contactFromAddress(profile, options)
   }
 
-  contactAccept (sessionName) {
-    const funcKey = '_contactAccept'
-    return this._queueHandler({ funcKey, params: [sessionName] })
+  async _contactFromAddress (address, options) {
+    try {
+      const dbAddr = this._orbitdbC.parseAddress(address)
+      const sessionId = SessionId.parse(dbAddr.path)
+      const offer = {
+        sessionId: SessionId.generate(this.type),
+        [sessionId.type]: dbAddr.toString()
+      }
+      return this.sessionOpen(offer, null, options)
+    } catch (e) {
+      console.error(e)
+      throw new Error('invalid address')
+    }
   }
 
-  async recordsRead () {
-    return this._getRecords(Contact.type)
-  }
+  async _onOpenedSession (recordId) {
+    const contact = await this.sessionBy(recordId)
 
-  async recordsQuery (mapper) {
-    return this.recordsRead()
-      .then(records => records.filter(mapper))
-      .catch(e => { this.log.error(e); throw e })
-  }
-
-  _onCheckHandshake (contact) {
-    // persist offer and capability when ready
     contact.events.once('status:CHECK_HANDSHAKE', async () => {
-      const record = await this._matchRecord(contact.offer.name)
+      const record = await this._matchRecord(recordId)
       if (!record) {
         this.log.error(
-          `contact ${contact.offer.name} is ready but record does not exist to update.`
+          `${contact.offer.sessionId} is ready but record does not exist to update.`
         )
         return
       }
       await this._setRecord(
-        contact.offer.name,
-        {
-          ...record,
-          session: contact.toJSON()
-        }
+        contact.offer.sessionId,
+        { ...record, session: contact.toJSON() }
       )
-      this.log(`contact ${contact.offer.name} complete record added`)
+      this.log(`contact ${contact.offer.sessionId} complete record added`)
     })
-  }
 
-  async _contactAdd (profileAddress, options = {}) {
-    await this.initialized
-    if (!profileAddress) throw new Error('profileAddress must be defined')
-    if (!this._orbitdbC.isValidAddress(profileAddress)) {
-      throw new Error(
-        `profileAddress ${profileAddress} is not a valid orbitdb address`
-      )
-    }
-    const [exists] = await this._queryRecords(
-      doc => doc.profileAddress === profileAddress,
-      Contact.type
-    )
-    if (exists) return this.openContact(exists.name)
-    const sProfileAddress = await this._account.profiles.myProfile.address()
-    const rProfileAddress = this._orbitdbC.parseAddress(profileAddress)
-    const contact = await Contact.fromProfile(
-      this._orbitdbC,
-      profileAddress,
-      {
-        log: this.log,
-        name: options.name,
-        info: options.info,
-        profilesComponent: this._account.profiles,
-        sender: { profile: sProfileAddress.toString() },
-        recipient: { profile: rProfileAddress.toString() }
-      }
-    )
-
-    await this._setRecord(
-      contact.offer.name,
-      {
-        name: contact.offer.name,
-        info: options.info,
-        profileAddress,
-        origin: options.origin || profileAddress,
-        meta: options.meta || {}
-      }
-    )
-    this.log(`contact ${contact.offer.name} partial record added`)
-
-    // persist offer and capability when ready
-    this._onCheckHandshake(contact)
-
-    this._contacts = { ...this._contacts, [contact.offer.name]: contact }
-    this.events.emit('added', contact.offer.name)
-    this.events.emit('contactNew', contact.offer.name)
-    return this._contacts[contact.offer.name]
-  }
-
-  async _contactOpen (sessionName) {
-    if (!sessionName) throw new Error('sessionName must be defined')
-    const { name, type } = SessionName.parse(sessionName)
-    if (type !== Contact.type) {
-      throw new Error(
-        `sessionName type must be '${Contact.type}' but was '${type}'`
-      )
-    }
-    if (this._contacts[name]) return this._contacts[name]
-
-    const record = await this._matchRecord(name)
-    if (!record) throw new Error(`no record for contact ${name}`)
-    if (!record.profileAddress) {
-      throw new Error(
-        `contact ${name} record did not contain a profileAddress field`
-      )
-    }
-
-    const contact = record.session
-      ? await Contact.open(
-        this._orbitdbC,
-        record.session.offer,
-        record.session.capability,
-        { log: this.log }
-      )
-      : (async () => {
-        await this._account.profiles.initialized
-        const contact = Contact.fromAddress(
-          this._orbitdbC,
-          record.profileAddress,
-          {
-            log: this.log,
-            name: record.name,
-            info: record.info,
-            profile: await this._account.profiles.myProfile.address()
-          }
+    contact.events.once('status:READY', async () => {
+      const { offer, capability } = await contact.messageSession()
+      await this._account.messages.initialized
+      if (!await this._account.messages.existId(recordId)) {
+        await this._account.messages.messageAccept(
+          offer,
+          { capability, origin: contact.offer.sessionId, recordId }
         )
-        this._onCheckHandshake(contact)
-        return contact
-      })()
-
-    this._contacts = { ...this._contacts, [name]: contact }
-    return this._contacts[name]
-  }
-
-  async _contactAccept (contactOffer, options = {}) {
-    await this.initialized
-    if (!contactOffer) throw new Error('offer does not exist')
-
-    if (
-      !contactOffer.recipient && !contactOffer.recipient.profile &&
-      contactOffer.recipient.profile !==
-      (await this._account.profiles.myProfile.address()).toString()
-    ) throw new Error('recipient mismatch')
-
-    const contact = await Contact.accept(
-      this._orbitdbC,
-      contactOffer,
-      {
-        log: this.log,
-        handshake: { idKey: contactOffer._channel.name }
       }
-    )
-    await contact.initialized
-    await this._setRecord(
-      contact.offer.name,
-      {
-        name: contact.offer.name,
-        channelAddress: contactOffer._channel.address,
-        origin: options.origin || contactOffer._channel.address,
-        session: contact.toJSON(),
-        meta: options.meta || {}
-      }
-    )
-    this.log(`contact ${contact.offer.name} complete record added`)
-
-    this._contacts = { ...this._contacts, [contact.offer.name]: contact }
-    this.events.emit('accepted', contact)
-    this.events.emit('contactNew', contact)
-    return this._contacts[contact.offer.name]
+    })
   }
 }
 

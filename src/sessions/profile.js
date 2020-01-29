@@ -23,13 +23,13 @@ class Profile extends Session {
     try {
       setStatus(this, status.INIT)
 
-      if (this.offer.name && this.offer.address) {
+      if (this.offer.name && this.offer.profile) {
         setStatus(this, status.FROM_ADDRESS)
         const idKey = this.options.idKey || this.offer.name
         const identityProvider = this.options.identityProvider ||
           this._orbitdbC._orbitdb.identity._provider
         this._state = await this._orbitdbC.openDb({
-          address: this.offer.address,
+          address: this.offer.profile,
           options: {
             identity: await this.constructor._identity(
               idKey,
@@ -70,25 +70,6 @@ class Profile extends Session {
   }
 
   static get type () { return 'profile' }
-
-  static async fromAddress (orbitdbC, address, options = {}) {
-    if (!orbitdbC) throw new Error('orbitdbC must be defined')
-    if (!address) throw new Error('address must be defined')
-    if (!orbitdbC.isValidAddress(address)) throw new Error('invalid address')
-    if (
-      !SessionName.isValid(orbitdbC.parseAddress(address).path)
-    ) throw new Error('invalid sessionName')
-
-    const sessionName = SessionName.parse(orbitdbC.parseAddress(address).path)
-    if (sessionName.type !== this.type) {
-      throw new Error(
-        `offer type was ${sessionName.type}, expected ${this.type}`
-      )
-    }
-
-    const offer = { name: sessionName.name, address: address.toString() }
-    return new Profile(orbitdbC, offer, null, options)
-  }
 
   async address () {
     await this.initialized

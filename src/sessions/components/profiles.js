@@ -1,8 +1,8 @@
 
 'use strict'
-const QueueComponent = require('./queueComponent')
-const Profile = require('../profile')
-const SessionName = require('../sessionName')
+const SessionManager = require('./sessionManager')
+const Profile = require('../message')
+const SessionId = require('./sessionId')
 
 const status = {
   PRE_INIT: 'PRE_INIT',
@@ -12,47 +12,34 @@ const status = {
 }
 const setStatus = require('../../utils').setStatus(status)
 
-class Profiles extends QueueComponent {
+class Profiles extends SessionManager {
   constructor (account, offer, capability, options) {
-    super(account, offer, capability, options)
-    this._profiles = {}
-    this._queue = { _profileOpen: {} }
+    super(account, offer, capability, { ...options, Session: Profile })
+    this._onOpenedSession = this.onOpenedSession.bind(this)
+    this.events.on('openedSession', this._onOpenedSession)
     this.initialized = this._initialize()
   }
+
+  get type () { return 'profiles' }
 
   async _initialize () {
     try {
       setStatus(this, status.INIT)
       await this._attachState()
 
-      const myProfile = await this._matchRecord('myProfile')
-      if (!myProfile) {
-        this.myProfile = await Profile.offer(
-          this._orbitdbC,
-          { log: this.log }
-        )
-        const myProfileAddress = (await this.myProfile.address()).toString()
-        await this._setRecord(
-          'myProfile',
-          { address: myProfileAddress }
-        )
-        await this._setRecord(
-          myProfileAddress,
-          { address: myProfileAddress }
-        )
+      const myProfile = 'myProfile'
+      if (!await this.idExists(myProfile)) {
+        this.myProfile = await this.sessionOffer({ recordId: myProfile })
       } else {
-        this.myProfile = await Profile.open(
-          this._orbitdbC,
-          myProfile.offer,
-          myProfile.capability,
-          this.options
-        )
-        await this.myProfile.initialized
+        this.myProfile = await this.sessionBy(myProfile)
       }
+      await this.myProfile.initialized
 
       if (this.options.load !== false) {
         this._getRecords(Profile.type)
-          .then(docs => docs.map((doc) => this.profileOpen(doc.address)))
+          .then(records => records.map(
+            ({ recordId }) => this.profileOpen(recordId))
+          )
       }
 
       setStatus(this, status.READY)
@@ -63,38 +50,51 @@ class Profiles extends QueueComponent {
     }
   }
 
-  static get type () { return 'profiles' }
-
-  profileOpen (profileAddress) {
-    const funcKey = '_profileOpen'
-    return this._queueHandler({ funcKey, params: [profileAddress] })
+  async profileOpen (profileAddress, options) {
+    profileAddress = profileAddress.toString()
+    if (this._idsRecorded().then(ids => ids.has(profileAddress))) {
+      return this.sessionBy(profileAddress)
+    }
+    const metadata = { origin: options.origin || profileAddress }
+    if (await this.existId(profileAddress)) {
+      throw new Error('profile exists')
+    }
+    options = { ...options, metadata, recordId: profileAddress }
+    return this._profileFromAddress(profileAddress, options)
   }
 
-  async _profileOpen (profileAddress) {
-    if (!profileAddress) throw new Error('sessionName must be defined')
-    if (this._profiles[profileAddress]) return this._profiles[profileAddress]
-
+  async _profileFromAddress (address, options) {
     try {
-      const address = this._orbitdbC.parseAddress(profileAddress)
-      const { type } = SessionName.parse(address.path)
-      if (type !== Profile.type) throw new Error('invalid session name type')
+      const dbAddr = this._orbitdbC.parseAddress(address)
+      const sessionId = SessionId.parse(dbAddr.path)
+      const offer = {
+        sessionId: SessionId.generate(this.type),
+        [sessionId.type]: dbAddr.toString()
+      }
+      return this.sessionOpen(offer, null, options)
     } catch (e) {
-      this.log.error(e)
-      throw new Error(`invalid profile address provided: ${profileAddress}`)
+      console.error(e)
+      throw new Error('invalid address')
     }
+  }
 
-    const exists = await this._matchRecord(profileAddress)
-    if (!exists) {
+  async _onOpenedSession (recordId) {
+    const profile = await this.sessionBy(recordId)
+
+    profile.events.once('status:READY', async () => {
+      const record = await this._matchRecord(recordId)
+      if (!record) {
+        this.log.error(
+          `${profile.offer.sessionId} is ready but record does not exist to update.`
+        )
+        return
+      }
       await this._setRecord(
-        profileAddress.toString(),
-        { address: profileAddress.toString() }
+        profile.offer.sessionId,
+        { ...record, session: profile.toJSON() }
       )
-    }
-
-    const profile = await Profile.fromAddress(this._orbitdbC, profileAddress)
-
-    this._profiles = { ...this._profiles, [profileAddress]: profile }
-    return this._profiles[profileAddress]
+      this.log(`${profile.offer.sessionId} complete record added`)
+    })
   }
 }
 

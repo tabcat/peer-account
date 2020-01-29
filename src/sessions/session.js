@@ -10,9 +10,10 @@ const setStatus = require('../utils').setStatus(status)
 const setLogOutputs = require('../utils').setLogOutputs
 
 class Session {
-  constructor (orbitdbC, offer, capability, options = {}) {
-    if (!orbitdbC) throw new Error('orbitdbC must be defined')
-    this._orbitdbC = orbitdbC // orbitdbController for opening session state
+  constructor (p2p, offer, capability, options = {}) {
+    if (!p2p) throw new Error('p2p must be defined')
+    // orbitdbController for opening session state
+    this._orbitdbC = p2p._orbitdbC || p2p
     // state is derived at a later time from offer and capability
     this._state = null
     this._offer = offer // offer contains data for all participants
@@ -53,18 +54,10 @@ class Session {
     })
   }
 
-  static async open (p2p, offer, capability, options = {}) {
+  static open (p2p, offer, capability, options = {}) {
     if (!p2p) throw new Error('p2p must be defined')
     if (!offer) throw new Error('offer must be defined')
     if (!capability) throw new Error('capability must be defined')
-    if (!await this.verifyOffer(offer)) {
-      throw new Error(`tried to open ${this.type} session with invalid offer`)
-    }
-    if (!await this.verifyCapability(capability)) {
-      throw new Error(
-        `tried to open ${this.type} session with invalid capability`
-      )
-    }
     return new this(p2p, offer, capability, options)
   }
 
@@ -89,7 +82,7 @@ class Session {
     if (!offer) throw new Error('offer must be defined')
     if (!await this.verifyOffer(offer)) throw new Error('invalid offer')
     const orbitdbC = p2p._orbitdbC || p2p
-    const capability = await this.createCapability(
+    const capability = options.capability || await this.createCapability(
       {
         identityProvider: orbitdbC._orbitdb.identity._provider,
         ...options,
