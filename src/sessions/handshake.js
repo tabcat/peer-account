@@ -1,7 +1,7 @@
 
 'use strict'
 const Session = require('./session')
-const SessionName = require('./sessionName')
+const SessionId = require('./sessionId')
 const crypto = require('@tabcat/peer-account-crypto')
 
 const status = {
@@ -38,7 +38,7 @@ class Handshake extends Session {
     try {
       setStatus(this, status.INIT)
       this._state = await this._orbitdbC.openDb({
-        name: this.offer.name,
+        sessionId: this.offer.sessionId,
         type: 'docstore',
         options: {
           identity: await this.constructor._identity(
@@ -103,7 +103,7 @@ class Handshake extends Session {
           ...state[remote],
           id: await this._decrypt(
             state[remote].id,
-            `${remote}-${this.offer.name}`,
+            `${remote}-${this.offer.sessionId}`,
             state
           )
         },
@@ -111,12 +111,12 @@ class Handshake extends Session {
           ...state[this.direction],
           id: await this._decrypt(
             state[this.direction].id,
-            `${this.direction}-${this.offer.name}`,
+            `${this.direction}-${this.offer.sessionId}`,
             state
           )
         },
         aes: [...await crypto.aes.exportKey(await this._aesKey(state))],
-        idKey: idKey(this.offer.name)
+        idKey: idKey(this.offer.sessionId)
       }
     } else return state
   }
@@ -147,12 +147,12 @@ class Handshake extends Session {
           }
           if (this.direction === 'recipient') {
             const identity = await Handshake._identity(
-              idKey(this.offer.name),
+              idKey(this.offer.sessionId),
               this._identityProvider
             )
             const encryptedId = await this._encrypt(
               identity.id,
-              `${this.direction}-${this.offer.name}`,
+              `${this.direction}-${this.offer.sessionId}`,
               state
             )
             await this._state.put({
@@ -172,12 +172,12 @@ class Handshake extends Session {
           ) throw new Error(`invalid ${status.ACCEPTED} state: ${state}`)
           if (this.direction === 'sender') {
             const identity = await Handshake._identity(
-              idKey(this.offer.name),
+              idKey(this.offer.sessionId),
               this._identityProvider
             )
             const encryptedId = await this._encrypt(
               identity.id,
-              `${this.direction}-${this.offer.name}`,
+              `${this.direction}-${this.offer.sessionId}`,
               state
             )
             await this._state.put({
@@ -234,7 +234,7 @@ class Handshake extends Session {
       const key = await this._aesKey(state)
       return key.encrypt(
         crypto.util.str2ab(JSON.stringify(json)),
-        SessionName.parse(this.offer.name).iv
+        SessionId.parse(this.offer.sessionId).iv
       )
     } catch (e) {
       this.log.error(e)
@@ -246,7 +246,7 @@ class Handshake extends Session {
       const key = await this._aesKey(state)
       const decrypted = await key.decrypt(
         new Uint8Array(cipherbytes),
-        SessionName.parse(this.offer.name).iv
+        SessionId.parse(this.offer.sessionId).iv
       )
       return JSON.parse(crypto.util.ab2str(decrypted.buffer))
     } catch (e) {
@@ -263,7 +263,7 @@ class Handshake extends Session {
     }
 
     return {
-      name: capability.name,
+      sessionId: capability.sessionId,
       sender: options.sender || capability.id,
       recipient: options.recipient,
       meta: { sessionType: this.type, curve: capability.curve }
@@ -272,8 +272,8 @@ class Handshake extends Session {
 
   static async verifyOffer (offer) {
     if (!offer) throw new Error('offer must be defined')
-    if (!offer.name || !SessionName.isValid(offer.name)) return false
-    if (SessionName.parse(offer.name).type !== this.type) return false
+    if (!offer.sessionId || !SessionId.isValid(offer.sessionId)) return false
+    if (SessionId.parse(offer.sessionId).type !== this.type) return false
     if (!offer.sender || !offer.recipient || !offer.meta) return false
     if (!offer.meta.sessionType || !offer.meta.curve) return false
     if (offer.meta.sessionType !== this.type) return false
@@ -286,24 +286,24 @@ class Handshake extends Session {
     }
     const fromOffer = options.offer && await this.verifyOffer(options.offer)
 
-    const name = fromOffer
-      ? options.offer.name
-      : options.name || SessionName.generate(this.type).toString()
+    const sessionId = fromOffer
+      ? options.offer.sessionId
+      : options.sessionId || SessionId.generate(this.type).toString()
     const curve = fromOffer
       ? options.offer.meta.curve
       : options.curve || 'P-256'
 
-    const idKey = options.idKey || name
+    const idKey = options.idKey || sessionId
     const identity = await this._identity(idKey, options.identityProvider)
     const { key, jwk } = await crypto.ecdh.generateKey(curve)
 
-    return { name, idKey, id: identity.id, key: [...key], jwk, curve }
+    return { sessionId, idKey, id: identity.id, key: [...key], jwk, curve }
   }
 
   static async verifyCapability (capability) {
     if (!capability) throw new Error('capability must be defined')
-    if (!capability.name || !SessionName.isValid(capability.name)) return false
-    if (SessionName.parse(capability.name).type !== this.type) return false
+    if (!capability.sessionId || !SessionId.isValid(capability.sessionId)) return false
+    if (SessionId.parse(capability.sessionId).type !== this.type) return false
     if (
       !capability.idKey || !capability.id || !capability.key ||
       !capability.jwk || !capability.curve

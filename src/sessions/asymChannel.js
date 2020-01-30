@@ -1,7 +1,7 @@
 
 'use strict'
 const Channel = require('./channel')
-const SessionName = require('./sessionName')
+const SessionId = require('./sessionName')
 const crypto = require('@tabcat/peer-account-crypto')
 
 const status = {
@@ -32,7 +32,7 @@ class AsymChannel extends Channel {
           !AsymChannel.verifyOffer(
             this._orbitdbC,
             {
-              name: this.offer.name,
+              sessionId: this.offer.sessionId,
               meta: db.options.meta
             }
           )
@@ -49,7 +49,7 @@ class AsymChannel extends Channel {
       }
 
       this._state = await this._orbitdbC.openDb({
-        name: this.offer.name,
+        sessionId: this.offer.sessionId,
         type: 'docstore',
         options: {
           identity: await this.constructor._identity(
@@ -81,13 +81,13 @@ class AsymChannel extends Channel {
     if (!address) throw new Error('address must be defined')
     if (!orbitdbC.isValidAddress(address)) throw new Error('invalid address')
 
-    const sessionName = SessionName.parse(orbitdbC.parseAddress(address).path)
-    if (sessionName.type !== this.type) {
+    const sessionId = SessionId.parse(orbitdbC.parseAddress(address).path)
+    if (sessionId.type !== this.type) {
       throw new Error(
-        `offer type was ${sessionName.type}, expected ${this.type}`
+        `offer type was ${sessionId.type}, expected ${this.type}`
       )
     }
-    const offer = { name: sessionName.name, address: address.toString() }
+    const offer = { sessionId, address: address.toString() }
     return new AsymChannel(orbitdbC, offer, null, options)
   }
 
@@ -102,14 +102,14 @@ class AsymChannel extends Channel {
     if (this.direction === 'recipient') {
       throw new Error('tried to send offer as owner')
     }
-    if (!offer.name) throw new Error('offer must have a name')
-    const sessionName = SessionName.parse(offer.name)
+    if (!offer.sessionId) throw new Error('offer must have a sessionId')
+    const sessionName = SessionId.parse(offer.sessionId)
     if (!this.isSupported(sessionName.type)) {
       throw new Error('unsupported session type')
     }
     if (!offer._channel) {
       offer._channel = {
-        name: this.offer.name,
+        sessionId: this.offer.sessionId,
         address: this._state.address.toString(),
         timestamp: Date.now()
       }
@@ -131,7 +131,7 @@ class AsymChannel extends Channel {
     try {
       await this.initialized
       if (!offerId) throw new Error('offerId must be defined')
-      if (!SessionName.isValidId(offerId)) throw new Error('invalid offerId')
+      if (!SessionId.isValidId(offerId)) throw new Error('invalid offerId')
       const op = await this._state.query(
         op =>
           (
@@ -165,7 +165,7 @@ class AsymChannel extends Channel {
           this.direction === 'recipient' ||
           op.identity.id === this.capability.id
         ) &&
-        SessionName.isValidId(op.payload.key) &&
+        SessionId.isValidId(op.payload.key) &&
         op.payload.key === op.payload.value.id &&
         op.payload.value.key &&
         op.payload.value.cipherbytes,
@@ -188,7 +188,7 @@ class AsymChannel extends Channel {
   }
 
   async _aesKey (offer) {
-    if (this._aes[offer.name]) return this._aes[offer.name]
+    if (this._aes[offer.sessionId]) return this._aes[offer.sessionId]
     const ecdh = await crypto.ecdh.importKey(this.capability.jwk)
     const secret = await ecdh.genSharedKey(new Uint8Array(
       this.direction === 'sender'
@@ -200,7 +200,7 @@ class AsymChannel extends Channel {
       secret.slice(-12), // salt
       128 // key length
     )
-    this._aes[offer.name] = aes
+    this._aes[offer.sessionId] = aes
     return aes
   }
 
@@ -209,7 +209,7 @@ class AsymChannel extends Channel {
       const key = await this._aesKey(offer)
       return key.encrypt(
         crypto.util.str2ab(JSON.stringify(offer)),
-        SessionName.parse(offer.name).iv
+        SessionId.parse(offer.sessionId).iv
       )
     } catch (e) {
       this.log.error(e)
@@ -221,7 +221,7 @@ class AsymChannel extends Channel {
       const key = await this._aesKey(encOffer)
       const decrypted = await key.decrypt(
         new Uint8Array(encOffer.cipherbytes),
-        SessionName.idToIv(encOffer.id)
+        SessionId.idToIv(encOffer.id)
       )
       return JSON.parse(crypto.util.ab2str(decrypted.buffer))
     } catch (e) {
@@ -235,7 +235,7 @@ class AsymChannel extends Channel {
     }
 
     return {
-      name: capability.name,
+      sessionId: capability.sessionId,
       meta: {
         sessionType: this.type,
         owner: { id: capability.id, key: capability.key },
@@ -248,8 +248,8 @@ class AsymChannel extends Channel {
 
   static async verifyOffer (offer) {
     if (!offer) throw new Error('offer must be defined')
-    if (!offer.name || !SessionName.isValid(offer.name)) return false
-    if (SessionName.parse(offer.name).type !== this.type) return false
+    if (!offer.sessionId || !SessionId.isValid(offer.sessionId)) return false
+    if (SessionId.parse(offer.sessionId).type !== this.type) return false
     if (!offer.meta) return false
     const { meta } = offer
     if (meta.sessionType !== this.type) return false
@@ -265,24 +265,24 @@ class AsymChannel extends Channel {
     }
     const fromOffer = options.offer && await this.verifyOffer(options.offer)
 
-    const name = fromOffer
-      ? options.offer.name
-      : options.name || SessionName.generate(this.type).toString()
+    const sessionId = fromOffer
+      ? options.offer.sessionId
+      : options.sessionId || SessionId.generate(this.type).toString()
     const curve = fromOffer
       ? options.offer.meta.curve
       : options.curve || 'P-256'
 
-    const idKey = options.idKey || name
+    const idKey = options.idKey || sessionId
     const identity = await this._identity(idKey, options.identityProvider)
     const { key, jwk } = await crypto.ecdh.generateKey(curve)
 
-    return { name, idKey, id: identity.id, key: [...key], jwk, curve }
+    return { sessionId, idKey, id: identity.id, key: [...key], jwk, curve }
   }
 
   static async verifyCapability (capability) {
     if (!capability) throw new Error('capability must be defined')
-    if (!capability.name || !SessionName.isValid(capability.name)) return false
-    if (SessionName.parse(capability.name).type !== this.type) return false
+    if (!capability.sessionId || !SessionId.isValid(capability.sessionId)) return false
+    if (SessionId.parse(capability.sessionId).type !== this.type) return false
     if (
       !capability.idKey || !capability.id || !capability.key ||
       !capability.jwk || !capability.curve

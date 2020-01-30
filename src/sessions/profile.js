@@ -1,7 +1,7 @@
 
 'use strict'
 const Session = require('./session')
-const SessionName = require('./sessionName')
+const SessionId = require('./sessionName')
 
 const status = {
   INIT: 'INIT',
@@ -23,9 +23,9 @@ class Profile extends Session {
     try {
       setStatus(this, status.INIT)
 
-      if (this.offer.name && this.offer.profile) {
+      if (this.offer.sessionId && this.offer.profile) {
         setStatus(this, status.FROM_ADDRESS)
-        const idKey = this.options.idKey || this.offer.name
+        const idKey = this.options.idKey || this.offer.sessionId
         const identityProvider = this.options.identityProvider ||
           this._orbitdbC._orbitdb.identity._provider
         this._state = await this._orbitdbC.openDb({
@@ -88,7 +88,7 @@ class Profile extends Session {
 
   async getProfile () {
     const entry = this._state.iterator().collect().map(e => e.payload.value)[0]
-    return entry || { name: SessionName.parse(this.offer.name).id }
+    return entry || { name: SessionId.parse(this.offer.name).pos }
   }
 
   async getField (field) {
@@ -112,8 +112,8 @@ class Profile extends Session {
 
   static async verifyOffer (offer) {
     if (!offer) throw new Error('offer must be defined')
-    if (!offer.name || !SessionName.isValid(offer.name)) return false
-    if (SessionName.parse(offer.name).type !== this.type) return false
+    if (!offer.sessionId || !SessionId.isValid(offer.sessionId)) return false
+    if (SessionId.parse(offer.sessionId).type !== this.type) return false
     if (!offer.meta) return false
     return true
   }
@@ -122,26 +122,27 @@ class Profile extends Session {
     if (!options.identityProvider) {
       throw new Error('options.identityProvider must be defined')
     }
-    const fromOffer = options.offer && await this.verifyOffer(options.offer)
-
-    if (options.name && !SessionName.isValid(options.name)) {
-      throw new Error('invalid session name provided in options.name')
+    if (options.sessionId && !SessionId.isValid(options.sessionId)) {
+      throw new Error('invalid sessionId provided in options.sessionId')
     }
 
-    const name = fromOffer
-      ? options.offer.name
-      : options.name || SessionName.generate(this.type).toString()
+    const fromOffer = options.offer && await this.verifyOffer(options.offer)
+    const sessionId = fromOffer
+      ? options.offer.sessionId
+      : options.sessionId || SessionId.generate(this.type).toString()
 
-    const idKey = options.idKey || name
+    const idKey = options.idKey || sessionId
     const identity = await this._identity(idKey, options.identityProvider)
 
-    return { name, idKey, id: identity.id }
+    return { sessionId, idKey, id: identity.id }
   }
 
   static async verifyCapability (capability) {
     if (!capability) throw new Error('capability must be defined')
-    if (!capability.name || !SessionName.isValid(capability.name)) return false
-    if (SessionName.parse(capability.name).type !== this.type) return false
+    if (!capability.sessionId || !SessionId.isValid(capability.sessionId)) {
+      return false
+    }
+    if (SessionId.parse(capability.sessionId).type !== this.type) return false
     if (!capability.idKey || !capability.id) return false
     return true
   }

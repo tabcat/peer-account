@@ -1,7 +1,7 @@
 
 'use strict'
 const Session = require('./session')
-const SessionName = require('./sessionName')
+const SessionId = require('./sessionId')
 
 class Channel extends Session {
   constructor (db, offer, capability, options = {}) {
@@ -37,11 +37,11 @@ class Channel extends Session {
     }
     return (op) => {
       const offer = op.payload.value
-      return this.isSupported(SessionName.parse(offer.name).type) &&
+      return this.isSupported(SessionId.parse(offer.sessionId).type) &&
       offer._channel &&
       (
-        offer._channel.name !== undefined
-          ? offer._channel.name === this.offer.name
+        offer._channel.sessionId !== undefined
+          ? offer._channel.sessionId === this.offer.sessionId
           : false
       ) &&
       (

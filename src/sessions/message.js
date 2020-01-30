@@ -1,7 +1,7 @@
 
 'use strict'
 const Session = require('./session')
-const SessionName = require('./sessionName')
+const SessionId = require('./sessionId')
 const crypto = require('@tabcat/peer-account-crypto')
 
 const status = {
@@ -22,7 +22,7 @@ class Message extends Session {
     try {
       setStatus(this, status.INIT)
       this._state = await this._orbitdbC.openDb({
-        name: this.offer.name,
+        sessionId: this.offer.sessionId,
         type: 'feed',
         options: {
           identity: await this.constructor._identity(
@@ -52,7 +52,7 @@ class Message extends Session {
     const envelope = {
       msg,
       _session: {
-        name: this.offer.name,
+        sessionId: this.offer.sessionId,
         address: this._state.address.toString()
       }
     }
@@ -121,11 +121,11 @@ class Message extends Session {
     const aesKey = await crypto.aes.importKey(new Uint8Array(capability.aes))
     const keyCheck = await aesKey.encrypt(
       crypto.util.str2ab(this.type),
-      SessionName.parse(capability.name).iv
+      SessionId.parse(capability.sessionId).iv
     )
 
     return {
-      name: capability.name,
+      sessionId: capability.sessionId,
       aes: capability.aes,
       sender: options.sender || capability.id,
       recipient: options.recipient,
@@ -138,8 +138,8 @@ class Message extends Session {
 
   static async verifyOffer (offer) {
     if (!offer) throw new Error('offer must be defined')
-    if (!offer.name || !SessionName.isValid(offer.name)) return false
-    if (SessionName.parse(offer.name).type !== this.type) return false
+    if (!offer.sessionId || !SessionId.isValid(offer.sessionId)) return false
+    if (SessionId.parse(offer.sessionId).type !== this.type) return false
     if (
       !offer.aes || !offer.sender || !offer.recipient || !offer.meta
     ) return false
@@ -149,7 +149,7 @@ class Message extends Session {
     return Boolean(
       await key.decrypt(
         new Uint8Array(offer.meta.keyCheck),
-        SessionName.parse(offer.name).iv
+        SessionId.parse(offer.sessionId).iv
       ).catch(e => {
         console.error(e)
         console.error('offer failed keyCheck')
@@ -164,24 +164,26 @@ class Message extends Session {
     }
     const fromOffer = options.offer && await this.verifyOffer(options.offer)
 
-    const name = fromOffer
-      ? options.offer.name
-      : options.name || SessionName.generate(this.type).toString()
+    const sessionId = fromOffer
+      ? options.offer.sessionId
+      : options.sessionId || SessionId.generate(this.type).toString()
     const aesKey = fromOffer
       ? await crypto.aes.importKey(new Uint8Array(options.offer.aes))
       : options.aesKey || await crypto.aes.generateKey(options.keyLen || 128)
 
-    const idKey = options.idKey || name
+    const idKey = options.idKey || sessionId
     const identity = await this._identity(idKey, options.identityProvider)
     const rawKey = await crypto.aes.exportKey(aesKey)
 
-    return { name, idKey, id: identity.id, aes: [...rawKey] }
+    return { sessionId, idKey, id: identity.id, aes: [...rawKey] }
   }
 
   static async verifyCapability (capability) {
     if (!capability) throw new Error('capability must be defined')
-    if (!capability.name || !SessionName.isValid(capability.name)) return false
-    if (SessionName.parse(capability.name).type !== this.type) return false
+    if (!capability.sessionId || !SessionId.isValid(capability.sessionId)) {
+      return false
+    }
+    if (SessionId.parse(capability.sessionId).type !== this.type) return false
     if (!capability.idKey || !capability.id) return false
     if (!capability.aes) return false
     return true

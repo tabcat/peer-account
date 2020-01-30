@@ -33,7 +33,7 @@ class Contact extends Session {
     try {
       setStatus(this, status.INIT)
       // handles fromAddress creation
-      if (this.offer.name && this.offer.profile && !this.offer.meta) {
+      if (this.offer.sessionId && this.offer.profile && !this.offer.meta) {
         setStatus(this, status.READ_PROFILE)
         if (!this._profilesComponent) {
           throw new Error(
@@ -68,7 +68,7 @@ class Contact extends Session {
           channel: asymChannelAddr
         }
       }
-      if (this.offer.name && this.offer.asym_channel && !this.offer.meta) {
+      if (this.offer.sessionId && this.offer.asym_channel && !this.offer.meta) {
         setStatus(this, status.SEND_OFFER)
         const asymChannel = await AsymChannel.fromAddress(
           this._orbitdbC,
@@ -79,14 +79,14 @@ class Contact extends Session {
         if (!asymChannel.isSupported(Contact.type)) {
           throw new Error(`channel does not support ${Contact.type} offers`)
         }
-        if (await asymChannel.getOffer(this.offer.name)) {
-          throw new Error(`contact offer ${this.offer.name} already exits`)
+        if (await asymChannel.getOffer(this.offer.sessionId)) {
+          throw new Error(`contact offer ${this.offer.sessionId} already exits`)
         }
         const capability = await Contact.createCapability(
           {
             identityProvider: this._orbitdbC._orbitdb.identity._provider,
             ...this.options,
-            name: this.offer.name
+            sessionId: this.offer.sessionId
           }
         )
         const offer = await Contact.createOffer(
@@ -100,7 +100,7 @@ class Contact extends Session {
           }
         )
         await asymChannel.sendOffer(offer)
-        this.log(`offer ${offer.name} sent to asymChannel`)
+        this.log(`offer ${offer.sessionId} sent to asymChannel`)
         this._offer = offer
         this._capability = capability
         this.log('contact offer sent')
@@ -141,7 +141,7 @@ class Contact extends Session {
       const dbAddr = await Index.determineAddress(
         this._orbitdbC._orbitdb,
         {
-          name: this.offer.name,
+          sessionId: this.offer.sessionId,
           options: {
             ...this.options,
             accessController: {
@@ -167,7 +167,7 @@ class Contact extends Session {
 
       const symChannelCapability = await SymChannel.createCapability(
         {
-          name: this.offer[SymChannel.type].name,
+          sessionId: this.offer[SymChannel.type].sessionId,
           aesKey,
           idKey,
           identityProvider: this._orbitdbC._orbitdb.identity._provider
@@ -184,7 +184,7 @@ class Contact extends Session {
 
       const messageCapability = await SymChannel.createCapability(
         {
-          name: this.offer[Message.type].name,
+          sessionId: this.offer[Message.type].sessionId,
           aesKey,
           idKey,
           identityProvider: this._orbitdbC._orbitdb.identity._provider
@@ -222,14 +222,14 @@ class Contact extends Session {
     }
 
     return {
-      name: capability.name,
+      sessionId: capability.sessionId,
       sender: options.sender || {},
       recipient: options.recipient || {},
       [Handshake.type]: await Handshake.createOffer(
         capability[Handshake.type],
         options[Handshake.type]
       ),
-      [SymChannel.type]: { name: capability[SymChannel.type].name },
+      [SymChannel.type]: { sessionId: capability[SymChannel.type].sessionId },
       meta: { sessionType: this.type },
       info: options.info || {}
     }
@@ -237,18 +237,18 @@ class Contact extends Session {
 
   static async verifyOffer (offer) {
     if (!offer) throw new Error('offer must be defined')
-    if (!offer.name || !SessionName.isValid(offer.name)) return false
-    if (SessionName.parse(offer.name).type !== this.type) return false
+    if (!offer.sessionId || !SessionId.isValid(offer.sessionId)) return false
+    if (SessionId.parse(offer.sessionId).type !== this.type) return false
     if (!offer.sender || !offer.recipient) return false
     if (!offer.meta || !offer.info) return false
     if (
       !offer[Handshake.type] ||
       !await Handshake.verifyOffer(offer[Handshake.type])
     ) return false
-    if (!offer[SymChannel.type] || !offer[SymChannel.type].name) return false
-    if (!SessionName.isValid(offer[SymChannel.type].name)) return false
+    if (!offer[SymChannel.type] || !offer[SymChannel.type].sessionId) return false
+    if (!SessionId.isValid(offer[SymChannel.type].sessionId)) return false
     if (
-      SessionName.parse(offer[SymChannel.type].name).type !== SymChannel.type
+      SessionId.parse(offer[SymChannel.type].sessionId).type !== SymChannel.type
     ) return false
     return true
   }
@@ -259,28 +259,28 @@ class Contact extends Session {
     }
     const fromOffer = options.offer && await this.verifyOffer(options.offer)
 
-    const name = fromOffer
-      ? options.offer.name
-      : options.name || SessionName.generate(this.type).toString()
+    const sessionId = fromOffer
+      ? options.offer.sessionId
+      : options.sessionId || SessionId.generate(this.type).toString()
     const handshakeOffer = fromOffer
       ? options.offer[Handshake.type]
       : undefined
-    const symChannelName = fromOffer
-      ? options.offer[SymChannel.type].name
-      : options[SymChannel.type] && options[SymChannel.type].name
-        ? options[SymChannel.type].name
-        : SessionName.generate(SymChannel.type).name
-    const messageName = fromOffer
-      ? options.offer[Message.type].name
-      : options[Message.type] && options[Message.type].name
-        ? options[Message.type].name
-        : SessionName.generate(Message.type).name
+    const symChannelId = fromOffer
+      ? options.offer[SymChannel.type].sessionId
+      : options[SymChannel.type] && options[SymChannel.type].sessionId
+        ? options[SymChannel.type].sessionId
+        : SessionId.generate(SymChannel.type).sessionId
+    const messageId = fromOffer
+      ? options.offer[Message.type].sessionId
+      : options[Message.type] && options[Message.type].sessionId
+        ? options[Message.type].sessionId
+        : SessionId.generate(Message.type).sessionId
 
-    const idKey = options.idKey || name
+    const idKey = options.idKey || sessionId
     const identity = await this._identity(idKey, options.identityProvider)
 
     return {
-      name,
+      sessionId,
       idKey,
       id: identity.id,
       [Handshake.type]: await Handshake.createCapability(
@@ -290,35 +290,35 @@ class Contact extends Session {
           offer: handshakeOffer
         }
       ),
-      [SymChannel.type]: { name: symChannelName },
-      [Message.type]: { name: messageName }
+      [SymChannel.type]: { sessionId: symChannelId },
+      [Message.type]: { sessionId: messageId }
     }
   }
 
   static async verifyCapability (capability) {
     if (!capability) throw new Error('capability must be defined')
-    if (!capability.name || !SessionName.isValid(capability.name)) return false
-    if (SessionName.parse(capability.name).type !== this.type) return false
+    if (!capability.sessionId || !SessionId.isValid(capability.sessionId)) return false
+    if (SessionId.parse(capability.sessionId).type !== this.type) return false
     if (!capability.idKey || !capability.id) return false
     if (!Handshake.verifyCapability(capability[Handshake.type])) return false
     if (
-      !capability[SymChannel.type] || !capability[SymChannel.type].name
+      !capability[SymChannel.type] || !capability[SymChannel.type].sessionId
     ) return false
     if (
-      !SessionName.isValid(capability[SymChannel.type].name)
+      !SessionId.isValid(capability[SymChannel.type].sessionId)
     ) return false
     if (
-      SessionName.parse(
-        capability[SymChannel.type].name
+      SessionId.parse(
+        capability[SymChannel.type].sessionId
       ).type !== SymChannel.type
     ) return false
     if (
-      !capability[Message.type] || !capability[Message.type].name
+      !capability[Message.type] || !capability[Message.type].sessionId
     ) return false
-    if (!SessionName.isValid(capability[Message.type].name)) return false
+    if (!SessionId.isValid(capability[Message.type].sessionId)) return false
     if (
-      SessionName.parse(
-        capability[Message.type].name
+      SessionId.parse(
+        capability[Message.type].sessionId
       ).type !== Message.type
     ) return false
     return true
