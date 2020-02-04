@@ -38,7 +38,7 @@ class Handshake extends Session {
     try {
       setStatus(this, status.INIT)
       this._state = await this._orbitdbC.openDb({
-        sessionId: this.offer.sessionId,
+        name: this.offer.sessionId,
         type: 'docstore',
         options: {
           identity: await this.constructor._identity(

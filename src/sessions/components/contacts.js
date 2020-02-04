@@ -15,12 +15,12 @@ const setStatus = require('../../utils').setStatus(status)
 class Contacts extends SessionManager {
   constructor (account, offer, capability, options) {
     super(account, offer, capability, { ...options, Session: Contact })
-    this._onOpenedSession = this.onOpenedSession.bind(this)
+    this._onOpenedSession = this._onOpenedSession.bind(this)
     this.events.on('openedSession', this._onOpenedSession)
     this.initialized = this._initialize()
   }
 
-  get type () { return 'contacts' }
+  static get type () { return 'contacts' }
 
   async _initialize () {
     try {
@@ -37,21 +37,29 @@ class Contacts extends SessionManager {
       setStatus(this, status.READY)
     } catch (e) {
       setStatus(this, status.FAILED)
+      console.error(e)
       this.log.error(e)
       throw new Error(`${Contacts.type} failed initialization`)
     }
   }
 
-  async contactBy (profile) {
-    return this.sessionBy(profile.toString())
+  async contactBy (profile, options) {
+    return this.sessionBy(profile.toString(), { ...options, profilesComponent: this._account.profiles })
   }
 
-  async contactAdd (profile, options) {
+  async contactAdd (profile, options = {}) {
     const metadata = { origin: options.origin || profile }
     if (await this.existId(profile.toString())) {
       throw new Error('contact already added')
     }
-    options = { ...options, metadata, recordId: profile.toString() }
+    options = {
+      ...options,
+      metadata,
+      recordId: profile.toString(),
+      profilesComponent: this._account.profiles,
+      sender: (await this._account.profiles.myProfile.address()).toString(),
+      recipient: profile.toString()
+    }
     return this._contactFromAddress(profile, options)
   }
 
@@ -60,7 +68,7 @@ class Contacts extends SessionManager {
       const dbAddr = this._orbitdbC.parseAddress(address)
       const sessionId = SessionId.parse(dbAddr.path)
       const offer = {
-        sessionId: SessionId.generate(this.type),
+        sessionId: SessionId.generate(this.Session.type),
         [sessionId.type]: dbAddr.toString()
       }
       return this.sessionOpen(offer, null, options)
@@ -68,6 +76,10 @@ class Contacts extends SessionManager {
       console.error(e)
       throw new Error('invalid address')
     }
+  }
+
+  async contactAccept (offer, options = {}) {
+    return this.sessionAccept(offer, { ...options, handshake: { idKey: offer._channel.sessionId } })
   }
 
   async _onOpenedSession (recordId) {
@@ -89,7 +101,7 @@ class Contacts extends SessionManager {
     })
 
     contact.events.once('status:READY', async () => {
-      const { offer, capability } = await contact.messageSession()
+      const { offer, capability } = await contact.message
       await this._account.messages.initialized
       if (!await this._account.messages.existId(recordId)) {
         await this._account.messages.messageAccept(

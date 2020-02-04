@@ -17,7 +17,7 @@ class Messages extends SessionManager {
     this.initialized = this._initialize()
   }
 
-  get type () { return 'messages' }
+  static get type () { return 'messages' }
 
   async _initialize () {
     try {
@@ -45,6 +45,10 @@ class Messages extends SessionManager {
 
   async messageOpen (offer, capability, options) {
     return this.sessionOpen(offer, capability, options)
+  }
+
+  async messageAccept (offer, options) {
+    return this.sessionAccept(offer, options)
   }
 }
 

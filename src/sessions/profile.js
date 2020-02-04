@@ -1,7 +1,7 @@
 
 'use strict'
 const Session = require('./session')
-const SessionId = require('./sessionName')
+const SessionId = require('./sessionId')
 
 const status = {
   INIT: 'INIT',
@@ -25,6 +25,10 @@ class Profile extends Session {
 
       if (this.offer.sessionId && this.offer.profile) {
         setStatus(this, status.FROM_ADDRESS)
+        const dbAddr = await this._orbitdbC.parseAddress(this.offer.profile)
+        if (this.offer.sessionId !== dbAddr.path) {
+          throw new Error('sessionId does not match address')
+        }
         const idKey = this.options.idKey || this.offer.sessionId
         const identityProvider = this.options.identityProvider ||
           this._orbitdbC._orbitdb.identity._provider
@@ -45,7 +49,7 @@ class Profile extends Session {
       } else {
         setStatus(this, status.FROM_OFFER)
         this._state = await this._orbitdbC.openDb({
-          name: this.offer.name,
+          name: this.offer.sessionId,
           type: 'eventlog',
           options: {
             identity: await this.constructor._identity(
@@ -78,7 +82,7 @@ class Profile extends Session {
 
   async getName () {
     const name = await this.getField('name')
-    return name || this.offer.name
+    return name || this.offer.sessionId
   }
 
   async setProfile (profile) {
@@ -88,7 +92,7 @@ class Profile extends Session {
 
   async getProfile () {
     const entry = this._state.iterator().collect().map(e => e.payload.value)[0]
-    return entry || { name: SessionId.parse(this.offer.name).pos }
+    return entry || { name: SessionId.parse(this.offer.sessionId).pos }
   }
 
   async getField (field) {
@@ -102,7 +106,7 @@ class Profile extends Session {
 
   static async createOffer (capability, options = {}) {
     return {
-      name: capability.name,
+      sessionId: capability.sessionId.toString(),
       meta: {
         sessionType: this.type,
         owner: { id: options.id || capability.id }
@@ -134,7 +138,7 @@ class Profile extends Session {
     const idKey = options.idKey || sessionId
     const identity = await this._identity(idKey, options.identityProvider)
 
-    return { sessionId, idKey, id: identity.id }
+    return { sessionId: sessionId.toString(), idKey, id: identity.id }
   }
 
   static async verifyCapability (capability) {

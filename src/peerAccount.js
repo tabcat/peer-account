@@ -6,6 +6,7 @@ const Manifest = require('./sessions/components/manifest')
 const Profiles = require('./sessions/components/profiles')
 const Inbox = require('./sessions/components/inbox')
 const Contacts = require('./sessions/components/contacts')
+const Messages = require('./sessions/components/messages')
 const EventEmitter = require('events').EventEmitter
 
 const status = {
@@ -17,7 +18,7 @@ const status = {
 const setStatus = require('./utils').setStatus(status)
 const setLogOutputs = require('./utils').setLogOutputs
 
-const components = [Manifest, Profiles, Inbox, Contacts]
+const components = [Manifest, Profiles, Inbox, Contacts, Messages]
 
 // const defaultOptions = {}
 
@@ -72,6 +73,7 @@ class PeerAccount {
           // generate the component session
           : await c.offer(this, componentOptions)
             .catch(e => {
+              console.error(e)
               this.log.error(e)
               throw new Error('failed to create component session')
             })
@@ -91,6 +93,7 @@ class PeerAccount {
       this.log('initialized')
     } catch (e) {
       setStatus(this, status.FAILED)
+      console.error(e)
       this.log.error(e)
       throw new Error('failed initialization')
     }

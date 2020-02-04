@@ -65,6 +65,8 @@ describe('Contacts Component', function () {
   })
 
   after(async () => {
+    // wait for some async stuff to finish
+    await new Promise(resolve => setTimeout(resolve, 3000))
     await account1._orbitdbC._orbitdb.disconnect()
     await ipfs1.stop()
     await account2._orbitdbC._orbitdb.disconnect()
@@ -72,8 +74,8 @@ describe('Contacts Component', function () {
   })
 
   it('adds a contact from profile address', async () => {
-    let contact1Test
-    [contact1, contact1Test] = await Promise.all([
+    let contact1QueueTest
+    ;[contact1, contact1QueueTest] = await Promise.all([
       account1.contacts.contactAdd(
         await account2.profiles.myProfile.address()
       ),
@@ -81,7 +83,7 @@ describe('Contacts Component', function () {
         await account2.profiles.myProfile.address()
       )
     ])
-    assert.strictEqual(contact1, contact1Test)
+    assert.strictEqual(contact1, contact1QueueTest)
     await Promise.all([
       new Promise(resolve => {
         contact1.events.once('status:HANDSHAKE', resolve)
@@ -93,22 +95,23 @@ describe('Contacts Component', function () {
   })
 
   it('opens a contact from session address', async () => {
-    account1.contacts._contacts = {}
     let contact1QueueTest
-    [contact1, contact1QueueTest] = await Promise.all([
-      account1.contacts.contactOpen(contact1.offer.name),
-      account1.contacts.contactOpen(contact1.offer.name)
+    account1.contacts._contacts = {}
+    ;[contact1, contact1QueueTest] = await Promise.all([
+      account1.contacts.contactBy(
+        await account2.profiles.myProfile.address()
+      ),
+      account1.contacts.contactBy(
+        await account2.profiles.myProfile.address()
+      )
     ])
     assert.strictEqual(contact1, contact1QueueTest)
-    await new Promise(resolve => {
-      contact1.events.once('status:HANDSHAKE', resolve)
-    })
   })
 
   it('accepts a contact session offer', async () => {
     let contact2QueueTest
     const [offer2] = await account2.inbox.inboxQuery(
-      (offer) => offer.name === contact1.offer.name
+      (offer) => offer.sessionId === contact1.offer.sessionId
     )
     ;[contact2, contact2QueueTest] = await Promise.all([
       account2.contacts.contactAccept(offer2),

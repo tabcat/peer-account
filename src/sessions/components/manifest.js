@@ -22,6 +22,8 @@ class Manifest extends Component {
     this.initialized = this._initialize()
   }
 
+  static get type () { return 'manifest' }
+
   async _initialize () {
     try {
       setStatus(this, status.INIT)
@@ -40,8 +42,6 @@ class Manifest extends Component {
       throw new Error(`${Manifest.type} failed initialization`)
     }
   }
-
-  static get type () { return 'manifest' }
 
   async exists (address) {
     await this.initialized

@@ -46,7 +46,8 @@ describe('Manifest Component', function () {
       account.profiles.myProfile._state.address.toString(),
       account.inbox._state._docstore.address.toString(),
       account.inbox.inbox._state.address.toString(),
-      account.contacts._state._docstore.address.toString()
+      account.contacts._state._docstore.address.toString(),
+      account.messages._state._docstore.address.toString()
     ].reduce(async (a, c) => {
       await a
       return account.manifest.delAddr(c)
@@ -72,10 +73,10 @@ describe('Manifest Component', function () {
   it('fails to add non-address to manifest', async () => {
     const worked = await new Promise((resolve, reject) => {
       account.manifest.addAddr(nonAddress)
-        .then(() => resolve(true))
-        .catch(() => resolve(false))
+        .then(() => resolve(false))
+        .catch(() => resolve(true))
     })
-    assert.strictEqual(worked, false)
+    assert.strictEqual(worked, true)
   })
 
   it('deletes address from manifest', async () => {

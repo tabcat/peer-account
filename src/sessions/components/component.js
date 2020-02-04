@@ -1,7 +1,7 @@
 
 'use strict'
 const Session = require('../session')
-const SessionId = require('../sessionName')
+const SessionId = require('../sessionId')
 const Index = require('../../encryptedIndex')
 const crypto = require('@tabcat/peer-account-crypto')
 
@@ -19,7 +19,7 @@ class Component extends Session {
     const dbAddr = await Index.determineAddress(
       this._orbitdbC._orbitdb,
       {
-        sessionId: this.offer.sessionId,
+        name: this.offer.sessionId,
         options: {
           ...this.options,
           accessController: {

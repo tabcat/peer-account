@@ -20,6 +20,8 @@ class Inbox extends Component {
     this.initialized = this._initialize()
   }
 
+  static get type () { return 'inbox' }
+
   async _initialize () {
     try {
       setStatus(this, status.INIT)
@@ -64,8 +66,6 @@ class Inbox extends Component {
       throw new Error(`${Inbox.type} failed initialization`)
     }
   }
-
-  static get type () { return 'inbox' }
 
   async inboxAddress () {
     await this.initialized

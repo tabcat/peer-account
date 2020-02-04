@@ -4,7 +4,7 @@ const assert = require('assert')
 const Ipfs = require('@tabcat/ipfs-bundle-t')
 const OrbitDB = require('orbit-db')
 const Identities = require('orbit-db-identity-provider')
-const SessionName = require('../src/sessions/sessionName')
+const SessionId = require('../src/sessions/sessionId')
 const Profile = require('../src/sessions/profile')
 const OrbitdbC = require('../src/orbitdbController')
 const rmrf = require('rimraf')
@@ -84,7 +84,7 @@ describe('Profile Session', function () {
     assert.strictEqual(profile2.status, 'READY')
     assert.strictEqual(profile2.isOwner, false)
     assert.strictEqual(
-      SessionName.parse(profile1.offer.name).id,
+      SessionId.parse(profile1.offer.sessionId).pos,
       (await profile2.getProfile()).name
     )
     assert.strictEqual(
@@ -94,12 +94,18 @@ describe('Profile Session', function () {
   })
 
   it('accepts a profile offer from address', async () => {
-    profile2 = await Profile.fromAddress(orbitdbC2, await profile1.address())
+    const address = await profile1.address()
+    const sessionId = SessionId.parse(address.path)
+    profile2 = await Profile.open(
+      orbitdbC2,
+      { sessionId: sessionId.toString(), [sessionId.type]: address.toString() },
+      null
+    )
     await profile2.initialized
     assert.strictEqual(profile2.status, 'READY')
     assert.strictEqual(profile2.isOwner, false)
     assert.strictEqual(
-      SessionName.parse(profile1.offer.name).id,
+      SessionId.parse(profile1.offer.sessionId).pos,
       (await profile2.getProfile()).name
     )
     assert.strictEqual(

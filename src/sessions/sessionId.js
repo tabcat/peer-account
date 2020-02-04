@@ -2,9 +2,10 @@
 'use strict'
 const { randomBytes } = require('@tabcat/peer-account-crypto')
 const bs58 = require('bs58')
+const Buffer = require('safe-buffer').Buffer
 
 const position = (sessionId) => sessionId.split('-')[1]
-const iv = (position) => new Uint8Array(bs58.decode(position))
+const iv = (position) => new Uint8Array(bs58.decode(position.toString()))
 
 class SessionId {
   constructor (sessionType, position) {
@@ -14,7 +15,7 @@ class SessionId {
 
   get type () { return this._type }
 
-  get pos () { return this._position }
+  get pos () { return this._pos }
 
   get iv () { return iv(this.pos) }
 
@@ -33,7 +34,7 @@ class SessionId {
         use an underscore (_)
         `)
     }
-    return new SessionId(type, bs58.encode(randomBytes(12)))
+    return new SessionId(type, bs58.encode(Buffer.from(randomBytes(12))))
   }
 
   static parse (sessionId) {
@@ -55,22 +56,16 @@ class SessionId {
     }
     const string = sessionId.toString()
     return string.split('-').length === 2 &&
-      this.isValidPosition(position(string))
+      this.isValidPos(position(string))
   }
 
   static isValidPos (pos) {
     if (typeof pos.toString !== 'function') {
       throw new Error('pos is not a string')
     }
-    const string = pos.toString()
-    if (string.split('.').filter(v => v.length > 0).length === 12) {
-      try {
-        iv(string)
-        return true
-      } catch (e) { return false }
-    } else {
-      return false
-    }
+    try {
+      return iv(pos).length === 12
+    } catch (e) { return false }
   }
 
   static posToIv (pos) { return iv(pos) }

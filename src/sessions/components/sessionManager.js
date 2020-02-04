@@ -52,11 +52,11 @@ class SessionManager extends Component {
     ).catch(e => { this.log.error(e); throw e })
   }
 
-  async sessionOffer (options) {
-    if (options.sessionId && await this.idExists(options.sessionId)) {
+  async sessionOffer (options = {}) {
+    if (options.sessionId && await this.existId(options.sessionId)) {
       throw new Error('sessionId already exists')
     }
-    if (options.recordId && await this.idExists(options.recordId)) {
+    if (options.recordId && await this.existId(options.recordId)) {
       throw new Error('recordId already exists')
     }
     const session = await this.Session.offer(this._orbitdbC, options)
@@ -64,17 +64,17 @@ class SessionManager extends Component {
     return this._openSession(session, recordId, options.metadata)
   }
 
-  async sessionBy (recordId) {
+  async sessionBy (recordId, options = {}) {
     if (this._sessions.has(recordId)) return this._sessions.get(recordId)
-    if (await this._idsRecorded.then(ids => !ids.has(recordId))) {
+    if (await this._idsRecorded().then(ids => !ids.has(recordId))) {
       throw new Error('no record found for that session')
     }
-    const [{ session, options }] =
+    const [{ session }] =
       await this.recordsQuery(record => record.recordId === recordId)
     return this.sessionOpen(session.offer, session.capability, options)
   }
 
-  sessionOpen (offer, capability, options) {
+  sessionOpen (offer, capability, options = {}) {
     const funcKey = '_sessionOpen'
     return this._queueHandler({
       funcKey,
@@ -84,7 +84,7 @@ class SessionManager extends Component {
     })
   }
 
-  sessionAccept (offer, options) {
+  sessionAccept (offer, options = {}) {
     const funcKey = '_sessionAccept'
     return this._queueHandler({
       funcKey,
@@ -100,6 +100,7 @@ class SessionManager extends Component {
     }
     const promise = this[funcKey](recordId, ...params)
       .catch((e) => {
+        console.error(e)
         this.log.error(e)
         this.log.error('_queueHandler failed')
         console.error({ funcKey, recordId, params })
@@ -116,7 +117,7 @@ class SessionManager extends Component {
 
   async _openSession (session, recordId, metadata) {
     if (!await this._matchRecord(session.offer.sessionId)) {
-      if (await this._idsRecorded.then(ids => !ids.has(recordId))) {
+      if (await this._idsRecorded().then(ids => !ids.has(recordId))) {
         await this._setRecord(
           session.offer.sessionId,
           {
@@ -136,14 +137,14 @@ class SessionManager extends Component {
     return session
   }
 
-  async _sessionOpen (recordId, offer, capability, options) {
+  async _sessionOpen (recordId, offer, capability, options = {}) {
     if (this._sessions.has(recordId)) return this._sessions.get(recordId)
     const session =
       await this.Session.open(this._orbitdbC, offer, capability, options)
     return this._openSession(session, recordId, options.metadata)
   }
 
-  async _sessionAccept (recordId, offer, options) {
+  async _sessionAccept (recordId, offer, options = {}) {
     if (this._sessions.has(recordId)) return this._sessions.get(recordId)
     const session = await this.Session.accept(this._orbitdbC, offer, options)
     return this._openSession(session, recordId, options.metadata)

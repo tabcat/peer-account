@@ -18,11 +18,13 @@ class Message extends Session {
     this.initialized = this._initialize()
   }
 
+  static get type () { return 'message' }
+
   async _initialize () {
     try {
       setStatus(this, status.INIT)
       this._state = await this._orbitdbC.openDb({
-        sessionId: this.offer.sessionId,
+        name: this.offer.sessionId,
         type: 'feed',
         options: {
           identity: await this.constructor._identity(
@@ -42,8 +44,6 @@ class Message extends Session {
       throw new Error(`${Message.type} failed initialization`)
     }
   }
-
-  static get type () { return 'sym_channel' }
 
   async sendMessage (msg) {
     await this.initialized

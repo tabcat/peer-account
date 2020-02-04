@@ -24,8 +24,8 @@ class Contact extends Session {
   constructor (orbitdbC, offer, capability, options = {}) {
     super(orbitdbC, offer, capability, options)
     this._profilesComponent = options.profilesComponent || null
-    this.channelSession = null
-    this.messageSession = null
+    this.symChannel = null
+    this.message = null
     this.initialized = this._initialize()
   }
 
@@ -65,10 +65,10 @@ class Contact extends Session {
         })
         this._offer = {
           ...this.offer,
-          channel: asymChannelAddr
+          [AsymChannel.type]: asymChannelAddr
         }
       }
-      if (this.offer.sessionId && this.offer.asym_channel && !this.offer.meta) {
+      if (this.offer.sessionId && this.offer[AsymChannel.type] && !this.offer.meta) {
         setStatus(this, status.SEND_OFFER)
         const asymChannel = await AsymChannel.fromAddress(
           this._orbitdbC,
@@ -79,7 +79,8 @@ class Contact extends Session {
         if (!asymChannel.isSupported(Contact.type)) {
           throw new Error(`channel does not support ${Contact.type} offers`)
         }
-        if (await asymChannel.getOffer(this.offer.sessionId)) {
+        const { pos } = SessionId.parse(this.offer.sessionId)
+        if (await asymChannel.getOffer(pos)) {
           throw new Error(`contact offer ${this.offer.sessionId} already exits`)
         }
         const capability = await Contact.createCapability(
@@ -106,8 +107,8 @@ class Contact extends Session {
         this.log('contact offer sent')
       }
       if (
-        !await this.verifyOffer(this.offer) &&
-        !await this.verifyCapability(this.capability)
+        !await this.constructor.verifyOffer(this.offer) &&
+        !await this.constructor.verifyCapability(this.capability)
       ) throw new Error('invalid offer or capability properties')
 
       setStatus(this, status.CHECK_HANDSHAKE)
@@ -141,7 +142,7 @@ class Contact extends Session {
       const dbAddr = await Index.determineAddress(
         this._orbitdbC._orbitdb,
         {
-          sessionId: this.offer.sessionId,
+          name: this.offer.sessionId,
           options: {
             ...this.options,
             accessController: {
@@ -198,17 +199,13 @@ class Contact extends Session {
         }
       )
 
-      this.channelSession = () => {
-        return { offer: symChannelOffer, capability: symChannelCapability }
-      }
-      this.messageSession = () => {
-        return { offer: messageOffer, capability: messageCapability }
-      }
+      this.symChannel = { offer: symChannelOffer, capability: symChannelCapability }
+      this.message = { offer: messageOffer, capability: messageCapability }
 
       setStatus(this, status.READY)
     } catch (e) {
       setStatus(this, status.FAILED)
-      console.log(e)
+      console.error(e)
       this.log.error(e)
       throw new Error(`${Contact.type} failed initialization`)
     }
@@ -222,7 +219,7 @@ class Contact extends Session {
     }
 
     return {
-      sessionId: capability.sessionId,
+      sessionId: capability.sessionId.toString(),
       sender: options.sender || {},
       recipient: options.recipient || {},
       [Handshake.type]: await Handshake.createOffer(
@@ -230,6 +227,7 @@ class Contact extends Session {
         options[Handshake.type]
       ),
       [SymChannel.type]: { sessionId: capability[SymChannel.type].sessionId },
+      [Message.type]: { sessionId: capability[Message.type].sessionId },
       meta: { sessionType: this.type },
       info: options.info || {}
     }
@@ -247,8 +245,12 @@ class Contact extends Session {
     ) return false
     if (!offer[SymChannel.type] || !offer[SymChannel.type].sessionId) return false
     if (!SessionId.isValid(offer[SymChannel.type].sessionId)) return false
+    if (!SessionId.isValid(offer[Message.type].sessionId)) return false
     if (
       SessionId.parse(offer[SymChannel.type].sessionId).type !== SymChannel.type
+    ) return false
+    if (
+      SessionId.parse(offer[Message.type].sessionId).type !== Message.type
     ) return false
     return true
   }
@@ -269,18 +271,18 @@ class Contact extends Session {
       ? options.offer[SymChannel.type].sessionId
       : options[SymChannel.type] && options[SymChannel.type].sessionId
         ? options[SymChannel.type].sessionId
-        : SessionId.generate(SymChannel.type).sessionId
+        : SessionId.generate(SymChannel.type)
     const messageId = fromOffer
       ? options.offer[Message.type].sessionId
       : options[Message.type] && options[Message.type].sessionId
         ? options[Message.type].sessionId
-        : SessionId.generate(Message.type).sessionId
+        : SessionId.generate(Message.type)
 
-    const idKey = options.idKey || sessionId
+    const idKey = options.idKey || sessionId.toString()
     const identity = await this._identity(idKey, options.identityProvider)
 
     return {
-      sessionId,
+      sessionId: sessionId.toString(),
       idKey,
       id: identity.id,
       [Handshake.type]: await Handshake.createCapability(
@@ -290,8 +292,8 @@ class Contact extends Session {
           offer: handshakeOffer
         }
       ),
-      [SymChannel.type]: { sessionId: symChannelId },
-      [Message.type]: { sessionId: messageId }
+      [SymChannel.type]: { sessionId: symChannelId.toString() },
+      [Message.type]: { sessionId: messageId.toString() }
     }
   }
 

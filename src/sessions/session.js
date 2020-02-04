@@ -57,7 +57,7 @@ class Session {
   static open (p2p, offer, capability, options = {}) {
     if (!p2p) throw new Error('p2p must be defined')
     if (!offer) throw new Error('offer must be defined')
-    if (!capability) throw new Error('capability must be defined')
+    // if (!capability) throw new Error('capability must be defined')
     return new this(p2p, offer, capability, options)
   }
 

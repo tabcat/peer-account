@@ -6,8 +6,10 @@ const OrbitDB = require('orbit-db')
 const Identities = require('orbit-db-identity-provider')
 const Contact = require('../src/sessions/contact')
 const AsymChannel = require('../src/sessions/asymChannel')
+const SymChannel = require('../src/sessions/symChannel')
+const Message = require('../src/sessions/message')
 const Profile = require('../src/sessions/profile')
-const SessionName = require('../src/sessions/sessionName')
+const SessionId = require('../src/sessions/sessionId')
 const OrbitdbC = require('../src/orbitdbController')
 const rmrf = require('rimraf')
 const { timeout } = require('./utils/config')
@@ -79,23 +81,16 @@ describe('Contact Session', function () {
     await ipfs2.stop()
   })
 
-  const checkContacts = (c1, c2) => {
-    assert.strictEqual(
-      c1._state._docstore.address.toString(),
-      c2._state._docstore.address.toString()
-    )
-    assert.strictEqual(
-      c1.channel._state.address.toString(),
-      c2.channel._state.address.toString()
-    )
-    assert.strictEqual(
-      c1.message._state.address.toString(),
-      c2.message._state.address.toString()
-    )
-    assert.strictEqual(c1.channel.status, 'LISTENING')
-    assert.strictEqual(c2.channel.status, 'LISTENING')
-    assert.strictEqual(c1.message.status, 'READY')
-    assert.strictEqual(c2.message.status, 'READY')
+  const checkContacts = async (c1, c2) => {
+    await Promise.all([c1.initialized, c2.initialized])
+    assert.deepStrictEqual(c1.symChannel.offer, c2.symChannel.offer)
+    assert.deepStrictEqual(c1.message.offer, c2.message.offer)
+    assert.strictEqual(await SymChannel.verifyOffer(c1.symChannel.offer), true)
+    assert.strictEqual(await Message.verifyOffer(c1.message.offer), true)
+    assert.strictEqual(await SymChannel.verifyCapability(c1.symChannel.capability), true)
+    assert.strictEqual(await SymChannel.verifyCapability(c2.symChannel.capability), true)
+    assert.strictEqual(await Message.verifyCapability(c1.message.capability), true)
+    assert.strictEqual(await Message.verifyCapability(c2.message.capability), true)
   }
 
   it('creates a contact offer and opens the instance', async () => {
@@ -115,8 +110,7 @@ describe('Contact Session', function () {
       contact1.offer,
       { handshake: { idKey: idKey2 } }
     )
-    await Promise.all([contact1.initialized, contact2.initialized])
-    checkContacts(contact1, contact2)
+    await checkContacts(contact1, contact2)
   })
 
   it('contact setup from an asymChannel address', async () => {
@@ -125,23 +119,27 @@ describe('Contact Session', function () {
       { supported: [Contact.type] }
     )
     await asymChannel1.initialized
-    contact2 = await Contact.fromAsymChannel(
-      orbitdbC2,
-      await asymChannel1.address()
-    )
+
+    const address = await asymChannel1.address()
+    const { type } = SessionId.parse(address.path)
+    const fromAddress = {
+      sessionId: SessionId.generate(Contact.type).toString(),
+      [type]: address.toString()
+    }
+    contact2 = await Contact.open(orbitdbC2, fromAddress, null)
+
     await new Promise(resolve => {
       asymChannel1._state.events.once('replicated', resolve)
     })
     const offer = await asymChannel1.getOffer(
-      SessionName.parse(contact2.offer.name).id
+      SessionId.parse(contact2.offer.sessionId).pos
     )
     contact1 = await Contact.accept(
       orbitdbC1,
       offer,
       { handshake: { idKey: asymChannel1.capability.idKey } }
     )
-    await Promise.all([contact1.initialized, contact2.initialized])
-    checkContacts(contact1, contact2)
+    await checkContacts(contact1, contact2)
   })
 
   it('contact setup from a profile address', async () => {
@@ -155,18 +153,39 @@ describe('Contact Session', function () {
     )
     await profile1.setField('inbox', (await asymChannel1.address()).toString())
     // this is not a real profilesComponent, just used for this test
-    const profilesComponent = {
-      profileOpen: (profileAddress) => Profile.fromAddress(
-        orbitdbC2,
-        profileAddress
-      )
+    const profilesComponent = (orbitdbC) => ({
+      profileOpen: (profileAddress, options) => {
+        async function profileFromAddress (address, options) {
+          try {
+            const dbAddr = orbitdbC.parseAddress(address)
+            const { type } = SessionId.parse(dbAddr.path)
+            const offer = {
+              sessionId: dbAddr.path,
+              [type]: dbAddr.toString()
+            }
+            return Profile.open(orbitdbC, offer, null, options)
+          } catch (e) {
+            console.error(e)
+            throw new Error('invalid address')
+          }
+        }
+
+        return profileFromAddress(profileAddress, options)
+      }
+    })
+
+    const address = await profile1.address()
+    const { type } = SessionId.parse(address.path)
+    const fromAddress = {
+      sessionId: SessionId.generate(Contact.type).toString(),
+      [type]: address.toString()
     }
-    const contact2 = await Contact.fromProfile(
+    contact2 = await Contact.open(
       orbitdbC2,
-      await profile1.address(),
+      fromAddress,
+      null,
       {
-        profilesComponent,
-        // sender and recipient fields are optional
+        profilesComponent: profilesComponent(orbitdbC2),
         sender: { profile: (await profile2.address()).toString() },
         recipient: { profile: (await profile1.address()).toString() }
       }
@@ -176,7 +195,7 @@ describe('Contact Session', function () {
       asymChannel1._state.events.once('replicated', resolve)
     })
     const offer = await asymChannel1.getOffer(
-      SessionName.parse(contact2.offer.name).id
+      SessionId.parse(contact2.offer.sessionId).pos
     )
     assert.strictEqual(
       (await profile2.address()).toString(),
@@ -191,7 +210,6 @@ describe('Contact Session', function () {
       offer,
       { handshake: { idKey: asymChannel1.capability.idKey } }
     )
-    await Promise.all([contact1.initialized, contact2.initialized])
-    checkContacts(contact1, contact2)
+    await checkContacts(contact1, contact2)
   })
 })

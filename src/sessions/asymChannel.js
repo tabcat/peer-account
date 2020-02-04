@@ -1,7 +1,7 @@
 
 'use strict'
 const Channel = require('./channel')
-const SessionId = require('./sessionName')
+const SessionId = require('./sessionId')
 const crypto = require('@tabcat/peer-account-crypto')
 
 const status = {
@@ -30,7 +30,6 @@ class AsymChannel extends Channel {
         if (
           !db.options.meta ||
           !AsymChannel.verifyOffer(
-            this._orbitdbC,
             {
               sessionId: this.offer.sessionId,
               meta: db.options.meta
@@ -49,7 +48,7 @@ class AsymChannel extends Channel {
       }
 
       this._state = await this._orbitdbC.openDb({
-        sessionId: this.offer.sessionId,
+        name: this.offer.sessionId,
         type: 'docstore',
         options: {
           identity: await this.constructor._identity(
@@ -87,7 +86,7 @@ class AsymChannel extends Channel {
         `offer type was ${sessionId.type}, expected ${this.type}`
       )
     }
-    const offer = { sessionId, address: address.toString() }
+    const offer = { sessionId: sessionId.toString(), address: address.toString() }
     return new AsymChannel(orbitdbC, offer, null, options)
   }
 
@@ -103,47 +102,48 @@ class AsymChannel extends Channel {
       throw new Error('tried to send offer as owner')
     }
     if (!offer.sessionId) throw new Error('offer must have a sessionId')
-    const sessionName = SessionId.parse(offer.sessionId)
-    if (!this.isSupported(sessionName.type)) {
+    const sessionId = SessionId.parse(offer.sessionId)
+    if (!this.isSupported(sessionId.type)) {
       throw new Error('unsupported session type')
     }
-    if (!offer._channel) {
-      offer._channel = {
+    offer = {
+      ...offer,
+      _channel: {
         sessionId: this.offer.sessionId,
         address: this._state.address.toString(),
         timestamp: Date.now()
       }
     }
 
-    const offerId = sessionName.id
-    if (await this.getOffer(offerId)) throw new Error('offer already exists!')
+    const sessionPos = sessionId.pos
+    if (await this.getOffer(sessionPos)) throw new Error('offer already exists!')
     const encryptedOffer = await this._encrypt(offer)
 
     return this._state.put({
-      [this._state.options.indexBy]: offerId,
-      id: offerId,
+      [this._state.options.indexBy]: sessionPos,
+      sessionPos: sessionPos,
       key: this.capability.key,
       cipherbytes: [...encryptedOffer.cipherbytes]
     })
   }
 
-  async getOffer (offerId) {
+  async getOffer (sessionPos) {
     try {
       await this.initialized
-      if (!offerId) throw new Error('offerId must be defined')
-      if (!SessionId.isValidId(offerId)) throw new Error('invalid offerId')
-      const op = await this._state.query(
+      if (!sessionPos) throw new Error('sessionPos must be defined')
+      if (!SessionId.isValidPos(sessionPos)) throw new Error('invalid sessionPos')
+      const [op] = await this._state.query(
         op =>
           (
             this.direction === 'recipient' ||
             op.identity.id === this.capability.id
           ) &&
-          op.payload.key === offerId &&
-          op.payload.value.id === offerId &&
+          op.payload.key === sessionPos &&
+          op.payload.value.sessionPos === sessionPos &&
           op.payload.value.key &&
           op.payload.value.cipherbytes,
         { fullOp: true }
-      )[0]
+      )
       if (!op) return undefined
       const offer = await this._decrypt(op.payload.value)
       const valid = this._isValidOffer(Date.now())(
@@ -165,8 +165,8 @@ class AsymChannel extends Channel {
           this.direction === 'recipient' ||
           op.identity.id === this.capability.id
         ) &&
-        SessionId.isValidId(op.payload.key) &&
-        op.payload.key === op.payload.value.id &&
+        SessionId.isValidPos(op.payload.key) &&
+        op.payload.key === op.payload.value.sessionPos &&
         op.payload.value.key &&
         op.payload.value.cipherbytes,
       { fullOp: true }
@@ -221,7 +221,7 @@ class AsymChannel extends Channel {
       const key = await this._aesKey(encOffer)
       const decrypted = await key.decrypt(
         new Uint8Array(encOffer.cipherbytes),
-        SessionId.idToIv(encOffer.id)
+        SessionId.posToIv(encOffer.sessionPos)
       )
       return JSON.parse(crypto.util.ab2str(decrypted.buffer))
     } catch (e) {
@@ -235,7 +235,7 @@ class AsymChannel extends Channel {
     }
 
     return {
-      sessionId: capability.sessionId,
+      sessionId: capability.sessionId.toString(),
       meta: {
         sessionType: this.type,
         owner: { id: capability.id, key: capability.key },
@@ -267,7 +267,7 @@ class AsymChannel extends Channel {
 
     const sessionId = fromOffer
       ? options.offer.sessionId
-      : options.sessionId || SessionId.generate(this.type).toString()
+      : options.sessionId || SessionId.generate(this.type)
     const curve = fromOffer
       ? options.offer.meta.curve
       : options.curve || 'P-256'
@@ -276,7 +276,14 @@ class AsymChannel extends Channel {
     const identity = await this._identity(idKey, options.identityProvider)
     const { key, jwk } = await crypto.ecdh.generateKey(curve)
 
-    return { sessionId, idKey, id: identity.id, key: [...key], jwk, curve }
+    return {
+      sessionId: sessionId.toString(),
+      idKey,
+      id: identity.id,
+      key: [...key],
+      jwk,
+      curve
+    }
   }
 
   static async verifyCapability (capability) {

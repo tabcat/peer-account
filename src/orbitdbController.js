@@ -19,7 +19,7 @@ class OrbitdbController {
     if (!name || !type) {
       throw new Error('name and type must both be defined')
     }
-    return orbitdb.determineAddress(name, type, options)
+    return orbitdb.determineAddress(name.toString(), type, options)
   }
 
   static async dbAddr (orbitdb, { name, type, options, address }) {
@@ -27,6 +27,7 @@ class OrbitdbController {
     if (!address && !(name && type)) {
       throw new Error('address or name and type must be defined for dbVector')
     }
+    if (name) name = name.toString()
     if (address) address = address.toString()
     return address
       ? this.parseAddress(orbitdb, address)
@@ -46,11 +47,11 @@ class OrbitdbController {
   }
 
   static isValidAddress (orbitdb, address) {
-    return orbitdb.constructor.isValidAddress(address)
+    return orbitdb.constructor.isValidAddress(address.toString())
   }
 
   static parseAddress (orbitdb, address) {
-    return orbitdb.constructor.parseAddress(address)
+    return orbitdb.constructor.parseAddress(address.toString())
   }
 
   async dbAddr (dbVector) {

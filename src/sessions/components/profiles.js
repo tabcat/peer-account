@@ -1,8 +1,8 @@
 
 'use strict'
 const SessionManager = require('./sessionManager')
-const Profile = require('../message')
-const SessionId = require('./sessionId')
+const Profile = require('../profile')
+const SessionId = require('../sessionId')
 
 const status = {
   PRE_INIT: 'PRE_INIT',
@@ -15,12 +15,12 @@ const setStatus = require('../../utils').setStatus(status)
 class Profiles extends SessionManager {
   constructor (account, offer, capability, options) {
     super(account, offer, capability, { ...options, Session: Profile })
-    this._onOpenedSession = this.onOpenedSession.bind(this)
+    this._onOpenedSession = this._onOpenedSession.bind(this)
     this.events.on('openedSession', this._onOpenedSession)
     this.initialized = this._initialize()
   }
 
-  get type () { return 'profiles' }
+  static get type () { return 'profiles' }
 
   async _initialize () {
     try {
@@ -28,7 +28,7 @@ class Profiles extends SessionManager {
       await this._attachState()
 
       const myProfile = 'myProfile'
-      if (!await this.idExists(myProfile)) {
+      if (!await this.existId(myProfile)) {
         this.myProfile = await this.sessionOffer({ recordId: myProfile })
       } else {
         this.myProfile = await this.sessionBy(myProfile)
@@ -45,14 +45,15 @@ class Profiles extends SessionManager {
       setStatus(this, status.READY)
     } catch (e) {
       setStatus(this, status.FAILED)
+      console.error(e)
       this.log.error(e)
       throw new Error(`${Profiles.type} failed initialization`)
     }
   }
 
-  async profileOpen (profileAddress, options) {
+  async profileOpen (profileAddress, options = {}) {
     profileAddress = profileAddress.toString()
-    if (this._idsRecorded().then(ids => ids.has(profileAddress))) {
+    if (await this._idsRecorded().then(ids => ids.has(profileAddress))) {
       return this.sessionBy(profileAddress)
     }
     const metadata = { origin: options.origin || profileAddress }
@@ -68,7 +69,7 @@ class Profiles extends SessionManager {
       const dbAddr = this._orbitdbC.parseAddress(address)
       const sessionId = SessionId.parse(dbAddr.path)
       const offer = {
-        sessionId: SessionId.generate(this.type),
+        sessionId: dbAddr.path,
         [sessionId.type]: dbAddr.toString()
       }
       return this.sessionOpen(offer, null, options)
