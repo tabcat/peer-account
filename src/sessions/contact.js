@@ -9,7 +9,7 @@ const SessionId = require('./sessionId')
 const Index = require('../encryptedIndex')
 const crypto = require('@tabcat/peer-account-crypto')
 
-const status = {
+const statuses = {
   INIT: 'INIT',
   READ_PROFILE: 'READ_PROFILE',
   SEND_OFFER: 'SEND_OFFER',
@@ -18,7 +18,6 @@ const status = {
   READY: 'READY',
   FAILED: 'FAILED'
 }
-const setStatus = require('../utils').setStatus(status)
 
 class Contact extends Session {
   constructor (orbitdbC, offer, capability, options = {}) {
@@ -31,10 +30,10 @@ class Contact extends Session {
 
   async _initialize () {
     try {
-      setStatus(this, status.INIT)
+      this.setStatus(statuses.INIT)
       // handles fromAddress creation
       if (this.offer.sessionId && this.offer.profile && !this.offer.meta) {
-        setStatus(this, status.READ_PROFILE)
+        this.setStatus(statuses.READ_PROFILE)
         if (!this._profilesComponent) {
           throw new Error(
             'options.profilesComponent must be defined to add from profile'
@@ -69,11 +68,10 @@ class Contact extends Session {
         }
       }
       if (this.offer.sessionId && this.offer[AsymChannel.type] && !this.offer.meta) {
-        setStatus(this, status.SEND_OFFER)
+        this.setStatus(statuses.SEND_OFFER)
         const asymChannel = await AsymChannel.fromAddress(
           this._orbitdbC,
-          this.offer.asym_channel,
-          { log: this.log }
+          this.offer.asym_channel
         )
         await asymChannel.initialized
         if (!asymChannel.isSupported(Contact.type)) {
@@ -101,28 +99,28 @@ class Contact extends Session {
           }
         )
         await asymChannel.sendOffer(offer)
-        this.log(`offer ${offer.sessionId} sent to asymChannel`)
+        this.log.debug(`offer: ${offer.sessionId} sent to asymChannel`)
         this._offer = offer
         this._capability = capability
-        this.log('contact offer sent')
+        this.log.debug('contact offer sent')
       }
       if (
         !await this.constructor.verifyOffer(this.offer) &&
         !await this.constructor.verifyCapability(this.capability)
       ) throw new Error('invalid offer or capability properties')
 
-      setStatus(this, status.CHECK_HANDSHAKE)
+      this.setStatus(statuses.CHECK_HANDSHAKE)
       const handshake = await Handshake.open(
         this._orbitdbC,
         this.offer[Handshake.type],
         this.capability[Handshake.type],
-        { log: this.log, start: false }
+        { start: false }
       )
 
       await handshake.initialized
 
       if (handshake.status !== 'CONFIRMED') {
-        setStatus(this, status.HANDSHAKE)
+        this.setStatus(statuses.HANDSHAKE)
         await handshake.start()
         const onHandshakeFail = () => { throw new Error('handshake failed') }
         handshake.events.once('status:FAILED', onHandshakeFail)
@@ -132,7 +130,7 @@ class Contact extends Session {
             handshake.events.removeListener('status:FAILED', onHandshakeFail)
           })
         })
-        this.log('handshake completed')
+        this.log.debug('handshake completed')
       }
 
       const shake = await handshake.state()
@@ -202,12 +200,12 @@ class Contact extends Session {
       this.symChannel = { offer: symChannelOffer, capability: symChannelCapability }
       this.message = { offer: messageOffer, capability: messageCapability }
 
-      setStatus(this, status.READY)
+      this.setStatus(statuses.READY)
     } catch (e) {
-      setStatus(this, status.FAILED)
-      console.error(e)
+      this.setStatus(statuses.FAILED)
       this.log.error(e)
-      throw new Error(`${Contact.type} failed initialization`)
+      this.log.error('failed initialization')
+      throw new Error('INIT_FAIL')
     }
   }
 

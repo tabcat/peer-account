@@ -8,15 +8,7 @@ const Inbox = require('./sessions/components/inbox')
 const Contacts = require('./sessions/components/contacts')
 const Messages = require('./sessions/components/messages')
 const EventEmitter = require('events').EventEmitter
-
-const status = {
-  PRE_INIT: 'PRE_INIT',
-  INIT: 'INIT',
-  READY: 'READY',
-  FAILED: 'FAILED'
-}
-const setStatus = require('./utils').setStatus(status)
-const setLogOutputs = require('./utils').setLogOutputs
+const Logger = require('logplease')
 
 const components = [Manifest, Profiles, Inbox, Contacts, Messages]
 
@@ -27,26 +19,26 @@ class PeerAccount {
     if (!orbitdb) throw new Error('orbitdb must be defined')
     if (!accountIndex) throw new Error('accountIndex must be defined')
     if (!keyCheck) throw new Error('keyCheck must be defined')
+
     this._accountIndex = accountIndex
-    this.keyCheck = keyCheck
     this.root = this._accountIndex._docstore.address.root
+    this.keyCheck = keyCheck
+
+    const loggerId = this.root.slice(-8)
+    this._orbitdbC = new OrbitdbController(orbitdb, loggerId)
     this.options = options
     this._components = components.reduce((a, c) => ({ ...a, [c.type]: c }))
 
     this.events = new EventEmitter()
-    setStatus(this, status.PRE_INIT)
-    setLogOutputs(this, 'account-', null, this.root.slice(-8))
-
-    this._orbitdbC = new OrbitdbController(orbitdb, this.log)
+    this.log = Logger.create(`account-${loggerId}`)
 
     this.events.on('status', status => this.log(`status set to ${status}`))
-    this.log('instance created')
+    this.log.debug('instance created')
     this.initialized = this._initialize()
   }
 
   async _initialize () {
     try {
-      setStatus(this, status.INIT)
       const duplicates =
         new Set(components.map(v => v.type)).size !== components.length
       if (duplicates) throw new Error('duplicate component types')
@@ -54,10 +46,7 @@ class PeerAccount {
       await components.reduce(async (a, c) => {
         await a
         const doc = await this._accountIndex.match(c.type)
-        const componentOptions = {
-          ...(this.options[c.type] || {}),
-          log: this.log
-        }
+        const componentOptions = this.options[c.type]
 
         const component = doc
           // open the existing component session
@@ -85,17 +74,15 @@ class PeerAccount {
 
         if (!doc) await this._accountIndex.set(c.type, component.toJSON())
         this[c.type] = component
-        this.log(`attached component ${c.type}`)
+        this.log.debug(`attached component ${c.type}`)
       }, Promise.resolve())
 
       await this[Manifest.type].addAddr(this._accountIndex._docstore.address)
-      setStatus(this, status.READY)
-      this.log('initialized')
+      this.log.debug('initialized')
     } catch (e) {
-      setStatus(this, status.FAILED)
-      console.error(e)
       this.log.error(e)
-      throw new Error('failed initialization')
+      this.log.error('failed initialization')
+      throw new Error('INIT_FAIL')
     }
   }
 

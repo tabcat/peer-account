@@ -3,13 +3,12 @@
 const SessionManager = require('./sessionManager')
 const Message = require('../message')
 
-const status = {
+const statuses = {
   PRE_INIT: 'PRE_INIT',
   INIT: 'INIT',
   READY: 'READY',
   FAILED: 'FAILED'
 }
-const setStatus = require('../../utils').setStatus(status)
 
 class Messages extends SessionManager {
   constructor (account, offer, capability, options) {
@@ -21,7 +20,7 @@ class Messages extends SessionManager {
 
   async _initialize () {
     try {
-      setStatus(this, status.INIT)
+      this.setStatus(statuses.INIT)
       await this._attachState()
 
       if (this.options.load !== false) {
@@ -31,11 +30,12 @@ class Messages extends SessionManager {
           )
       }
 
-      setStatus(this, status.READY)
+      this.setStatus(statuses.READY)
     } catch (e) {
-      setStatus(this, status.FAILED)
+      this.setStatus(statuses.FAILED)
       this.log.error(e)
-      throw new Error(`${Messages.type} failed initialization`)
+      this.log.error('failed initialization')
+      throw new Error('INIT_FAIL')
     }
   }
 

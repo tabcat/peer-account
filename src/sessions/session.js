@@ -2,32 +2,65 @@
 'use strict'
 const Identities = require('orbit-db-identity-provider')
 const EventEmitter = require('events').EventEmitter
+const Logger = require('logplease')
 
-const status = {
+const statuses = {
   PRE_INIT: 'PRE_INIT'
 }
-const setStatus = require('../utils').setStatus(status)
-const setLogOutputs = require('../utils').setLogOutputs
+const setStatus = (self) => {
+  if (!self.events) throw new Error('no events property')
+  return function (status = '') {
+    status = status.toString()
+    if (self.status === status) {
+      self.log.warn(`status already is already set to '${status}'`)
+    } else {
+      self.status = status
+      self.events.emit('status', status)
+      self.events.emit(`status:${status}`)
+    }
+  }
+}
 
 class Session {
   constructor (p2p, offer, capability, options = {}) {
     if (!p2p) throw new Error('p2p must be defined')
+    if (!offer || !offer.sessionId) {
+      throw new Error('offer.sessionId must be defined')
+    }
+
     // orbitdbController for opening session state
     this._orbitdbC = p2p._orbitdbC || p2p
-    // state is derived at a later time from offer and capability
+
+    // the unique id of the session
+    this._sessionId = offer.sessionId.toString()
+
+    // offer contains data for all participants
+    this._offer = offer
+
+    // contains private data like encryption keys
+    this._capability = capability
+
+    // state is derived in this._initialize from offer and capability
     this._state = null
-    this._offer = offer // offer contains data for all participants
-    this._capability = capability // contains private data like encryption keys
+
     this.options = options
     this.events = new EventEmitter()
-    setStatus(this, status.PRE_INIT)
-    setLogOutputs(this, this.constructor.type, options.log)
-    this.events.on('status', status => this.log(`status set to ${status}`))
-    this.log('instance created')
+    this.setStatus = setStatus(this)
+    this.log = Logger.create(this.sessionId)
+
+    this.setStatus(statuses.PRE_INIT)
+    this.events.on('status', status => this.log.debug(`status set to ${status}`))
+    this.log.debug('instance created')
+
+    // set to this._initialize() in sub class
     this.initialized = null
   }
 
   static get type () { return 'session' }
+
+  async _initialize () {}
+
+  get sessionId () { return this._sessionId }
 
   get offer () { return this._offer }
 
@@ -55,9 +88,6 @@ class Session {
   }
 
   static open (p2p, offer, capability, options = {}) {
-    if (!p2p) throw new Error('p2p must be defined')
-    if (!offer) throw new Error('offer must be defined')
-    // if (!capability) throw new Error('capability must be defined')
     return new this(p2p, offer, capability, options)
   }
 

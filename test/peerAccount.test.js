@@ -38,7 +38,6 @@ describe('PeerAccount', function () {
   it('logs into an account', async () => {
     account = await PeerAccount.login(orbitdb, dbAddr, rawKey)
     await account.initialized
-    assert.strictEqual(account.status, 'READY')
     Object.keys(account._components)
       .map(x => assert.strictEqual(account[x].status, 'READY'))
   })

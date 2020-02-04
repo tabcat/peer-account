@@ -4,12 +4,11 @@ const Session = require('./session')
 const SessionId = require('./sessionId')
 const crypto = require('@tabcat/peer-account-crypto')
 
-const status = {
+const statuses = {
   INIT: 'INIT',
   READY: 'READY',
   FAILED: 'FAILED'
 }
-const setStatus = require('../utils').setStatus(status)
 
 class Message extends Session {
   constructor (orbitdbC, offer, capability, options = {}) {
@@ -22,7 +21,7 @@ class Message extends Session {
 
   async _initialize () {
     try {
-      setStatus(this, status.INIT)
+      this.setStatus(statuses.INIT)
       this._state = await this._orbitdbC.openDb({
         name: this.offer.sessionId,
         type: 'feed',
@@ -37,11 +36,12 @@ class Message extends Session {
           meta: this.offer.meta
         }
       })
-      setStatus(this, status.READY)
+      this.setStatus(statuses.READY)
     } catch (e) {
-      setStatus(this, status.FAILED)
+      this.setStatus(statuses.FAILED)
       this.log.error(e)
-      throw new Error(`${Message.type} failed initialization`)
+      this.log.error('failed initialization')
+      throw new Error('INIT_FAIL')
     }
   }
 

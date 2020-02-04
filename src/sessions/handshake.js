@@ -4,7 +4,7 @@ const Session = require('./session')
 const SessionId = require('./sessionId')
 const crypto = require('@tabcat/peer-account-crypto')
 
-const status = {
+const statuses = {
   PRE_INIT: 'PRE_INIT',
   INIT: 'INIT',
   PRE_CREATION: 'PRE_CREATION',
@@ -13,7 +13,6 @@ const status = {
   CONFIRMED: 'CONFIRMED',
   FAILED: 'FAILED'
 }
-const setStatus = require('../utils').setStatus(status)
 
 const idKey = (sessionName) => `idKey-${sessionName}`
 
@@ -36,7 +35,7 @@ class Handshake extends Session {
 
   async _initialize () {
     try {
-      setStatus(this, status.INIT)
+      this.setStatus(statuses.INIT)
       this._state = await this._orbitdbC.openDb({
         name: this.offer.sessionId,
         type: 'docstore',
@@ -51,10 +50,10 @@ class Handshake extends Session {
           meta: this.offer.meta
         }
       })
-      setStatus(this, await this.state().then(s => s.status))
+      this.setStatus(await this.state().then(s => s.status))
       if (this.options.start) this.start()
     } catch (e) {
-      setStatus(this, status.FAILED)
+      this.setStatus(statuses.FAILED)
       this.log.error(e)
       throw new Error(`${Handshake.type} failed initialization`)
     }
@@ -90,12 +89,12 @@ class Handshake extends Session {
       doc => doc[this._state.options.indexBy] === 'state'
     )[0]
     // sender has not initialized state
-    if (!state) return { status: status.PRE_CREATION }
+    if (!state) return { status: statuses.PRE_CREATION }
     if (!state.status) {
       throw new Error('state did not contain a status field')
     }
     // return state with decrypted identity fields when status is confirmed
-    if (state.status === status.CONFIRMED) {
+    if (state.status === statuses.CONFIRMED) {
       const remote = this.direction === 'recipient' ? 'sender' : 'recipient'
       return {
         ...state,
@@ -124,26 +123,28 @@ class Handshake extends Session {
   async _pollState () {
     try {
       await this.initialized
-      if (!this._listening) this.log.error('polled state while not listening')
+      if (!this._listening) this.log.warn('polled state while not listening')
       const state = await this.state()
-      if (!status[state.status]) {
+      if (!statuses[state.status]) {
         throw new Error(`invalid state status: ${state.status}`)
       }
-      setStatus(this, status[state.status])
+      if (this.status !== state.status) {
+        this.setStatus(statuses[state.status])
+      }
       switch (state.status) {
-        case status.PRE_CREATION:
+        case statuses.PRE_CREATION:
           if (this.direction === 'sender') {
             await this._state.put({
               [this._state.options.indexBy]: 'state',
-              status: status.CREATED,
+              status: statuses.CREATED,
               sender: { key: [...this.capability.key] }
             })
-            setStatus(this, status.CREATED)
+            this.setStatus(statuses.CREATED)
           }
           return
-        case status.CREATED:
+        case statuses.CREATED:
           if (!state.sender || !state.sender.key) {
-            throw new Error(`invalid ${status.CREATED} state: ${state}`)
+            throw new Error(`invalid ${statuses.CREATED} state: ${state}`)
           }
           if (this.direction === 'recipient') {
             const identity = await Handshake._identity(
@@ -157,19 +158,19 @@ class Handshake extends Session {
             )
             await this._state.put({
               ...state,
-              status: status.ACCEPTED,
+              status: statuses.ACCEPTED,
               recipient: {
                 id: [...encryptedId.cipherbytes],
                 key: [...this.capability.key]
               }
             })
-            setStatus(this, status.ACCEPTED)
+            this.setStatus(statuses.ACCEPTED)
           }
           return
-        case status.ACCEPTED:
+        case statuses.ACCEPTED:
           if (
             !state.recipient || !state.recipient.id || !state.recipient.key
-          ) throw new Error(`invalid ${status.ACCEPTED} state: ${state}`)
+          ) throw new Error(`invalid ${statuses.ACCEPTED} state: ${state}`)
           if (this.direction === 'sender') {
             const identity = await Handshake._identity(
               idKey(this.offer.sessionId),
@@ -182,7 +183,7 @@ class Handshake extends Session {
             )
             await this._state.put({
               ...state,
-              status: status.CONFIRMED,
+              status: statuses.CONFIRMED,
               sender: {
                 ...state.sender,
                 id: [...encryptedId.cipherbytes]
@@ -197,10 +198,9 @@ class Handshake extends Session {
         //   this._listening = false
         //   this.events.emit('declined')
         //   return
-        case status.CONFIRMED:
+        case statuses.CONFIRMED:
           this._state.events.removeListener('replicated', this._pollState)
           this._listening = false
-          setStatus(this, status.CONFIRMED)
           return
         default:
           throw new Error(`no case for status: ${state.status}`)
@@ -213,8 +213,8 @@ class Handshake extends Session {
   async _aesKey (state) {
     if (this._aes) return this._aes
     if (
-      state.status === status.PRE_INIT ||
-      (state.status === status.INIT && this.direction === 'sender')
+      state.status === statuses.PRE_INIT ||
+      (state.status === statuses.INIT && this.direction === 'sender')
     ) throw new Error('_aesKey called before state was prepared')
     const ecdh = await crypto.ecdh.importKey(this.capability.jwk)
     const secret = await ecdh.genSharedKey(new Uint8Array(

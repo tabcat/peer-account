@@ -2,13 +2,12 @@
 'use strict'
 const Component = require('./component')
 
-const status = {
+const statuses = {
   INIT: 'INIT',
   READY: 'READY',
   CLOSED: 'CLOSED',
   FAILED: 'FAILED'
 }
-const setStatus = require('../../utils').setStatus(status)
 
 const manifestClosed = () => new Error('manifest closed')
 
@@ -26,20 +25,21 @@ class Manifest extends Component {
 
   async _initialize () {
     try {
-      setStatus(this, status.INIT)
+      this.setStatus(statuses.INIT)
       await this._attachState()
 
       this._state._docstore.events.once('closed', () => {
-        setStatus(this, status.CLOSED)
-        this.log('orbitdb closed index')
+        this.setStatus(statuses.CLOSED)
+        this.log.debug('orbitdb closed index')
         this._orbitdbC.events.removeListener('openDb', this.addAddr)
         this._orbitdbC.events.removeListener('dropDb', this.delAddr)
       })
-      setStatus(this, status.READY)
+      this.setStatus(statuses.READY)
     } catch (e) {
-      setStatus(this, status.FAILED)
+      this.setStatus(statuses.FAILED)
       this.log.error(e)
-      throw new Error(`${Manifest.type} failed initialization`)
+      this.log.error('failed initialization')
+      throw new Error('INIT_FAIL')
     }
   }
 
@@ -48,7 +48,7 @@ class Manifest extends Component {
     if (!this._orbitdbC.isValidAddress(address)) {
       throw new Error('address is invalid')
     }
-    if (this.status === status.CLOSED) {
+    if (this.status === statuses.CLOSED) {
       this.log.error(`exists(${address}): failed, index is closed`)
       throw manifestClosed()
     }
@@ -57,7 +57,7 @@ class Manifest extends Component {
 
   async manifest () {
     await this.initialized
-    if (this.status === status.CLOSED) {
+    if (this.status === statuses.CLOSED) {
       this.log.error('manifest(): failed, manifest is closed')
       throw manifestClosed()
     }
@@ -72,7 +72,7 @@ class Manifest extends Component {
       throw new Error(`addAddr(${address}): address is invalid`)
     }
     if (address === this._state._docstore.address.toString()) { return }
-    if (this.status === status.CLOSED) {
+    if (this.status === statuses.CLOSED) {
       this.log.error(`addAddr(${address}): failed, manifest is closed`)
       throw manifestClosed()
     }
@@ -83,10 +83,10 @@ class Manifest extends Component {
           this.log.error(`addAddr(${address}), failed to write to log`)
         })
       this.events.emit('add', address)
-      this.log(`added ${address}`)
+      this.log.debug(`added ${address}`)
       return addition
     } else {
-      this.log(`addAddr(${address}): address already exists`)
+      this.log.debug(`addAddr(${address}): address already exists`)
     }
   }
 
@@ -97,7 +97,7 @@ class Manifest extends Component {
       throw new Error(`delAddr(${address}): address is invalid`)
     }
     if (address === this._state._docstore.address.toString()) { return }
-    if (this.status === status.CLOSED) {
+    if (this.status === statuses.CLOSED) {
       this.log.error(`delAddr(${address}): failed, index is closed`)
       throw manifestClosed()
     }
@@ -108,10 +108,10 @@ class Manifest extends Component {
           this.log.error(`addAddr(${address}), failed to write to log`)
         })
       this.events.emit('del', address)
-      this.log(`deleted ${address}`)
+      this.log.debug(`deleted ${address}`)
       return deletion
     } else {
-      this.log(`delAddr(${address}): address does not exist`)
+      this.log.debug(`delAddr(${address}): address does not exist`)
     }
   }
 }

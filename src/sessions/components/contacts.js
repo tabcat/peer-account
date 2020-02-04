@@ -4,13 +4,12 @@ const SessionManager = require('./sessionManager')
 const Contact = require('../contact')
 const SessionId = require('../sessionId')
 
-const status = {
+const statuses = {
   PRE_INIT: 'PRE_INIT',
   INIT: 'INIT',
   READY: 'READY',
   FAILED: 'FAILED'
 }
-const setStatus = require('../../utils').setStatus(status)
 
 class Contacts extends SessionManager {
   constructor (account, offer, capability, options) {
@@ -24,7 +23,7 @@ class Contacts extends SessionManager {
 
   async _initialize () {
     try {
-      setStatus(this, status.INIT)
+      this.setStatus(statuses.INIT)
       await this._attachState()
 
       if (this.options.load !== false) {
@@ -34,12 +33,12 @@ class Contacts extends SessionManager {
           )
       }
 
-      setStatus(this, status.READY)
+      this.setStatus(statuses.READY)
     } catch (e) {
-      setStatus(this, status.FAILED)
-      console.error(e)
+      this.setStatus(statuses.FAILED)
       this.log.error(e)
-      throw new Error(`${Contacts.type} failed initialization`)
+      this.log.error('failed initialization')
+      throw new Error('INIT_FAIL')
     }
   }
 
@@ -86,7 +85,8 @@ class Contacts extends SessionManager {
     const contact = await this.sessionBy(recordId)
 
     contact.events.once('status:CHECK_HANDSHAKE', async () => {
-      const record = await this._matchRecord(recordId)
+      const [record] =
+        await this._queryRecords(record => record.recordId === recordId)
       if (!record) {
         this.log.error(
           `${contact.offer.sessionId} is ready but record does not exist to update.`
@@ -97,7 +97,7 @@ class Contacts extends SessionManager {
         contact.offer.sessionId,
         { ...record, session: contact.toJSON() }
       )
-      this.log(`contact ${contact.offer.sessionId} complete record added`)
+      this.log.debug(`contact ${contact.offer.sessionId} complete record added`)
     })
 
     contact.events.once('status:READY', async () => {

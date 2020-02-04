@@ -4,14 +4,13 @@ const Channel = require('./channel')
 const SessionId = require('./sessionId')
 const crypto = require('@tabcat/peer-account-crypto')
 
-const status = {
+const statuses = {
   PRE_INIT: 'PRE_INIT',
   INIT: 'INIT',
   FROM_ADDRESS: 'FROM_ADDRESS',
   LISTENING: 'LISTENING',
   FAILED: 'FAILED'
 }
-const setStatus = require('../utils').setStatus(status)
 
 class AsymChannel extends Channel {
   constructor (orbitdbC, offer, capability, options = {}) {
@@ -22,10 +21,10 @@ class AsymChannel extends Channel {
 
   async initialize () {
     try {
-      setStatus(this, status.INIT)
+      this.setStatus(statuses.INIT)
       // handles fromAddress creation
       if (this.offer.address && !this.offer.meta) {
-        setStatus(this, status.FROM_ADDRESS)
+        this.setStatus(statuses.FROM_ADDRESS)
         const db = await this._orbitdbC.openDb({ address: this.offer.address })
         if (
           !db.options.meta ||
@@ -65,11 +64,12 @@ class AsymChannel extends Channel {
 
       this._state.events.on('replicated', () => this.events.emit('replicated'))
       this._state.events.on('write', () => this.events.emit('write'))
-      setStatus(this, status.LISTENING)
+      this.setStatus(statuses.LISTENING)
     } catch (e) {
-      setStatus(this, status.FAILED)
+      this.setStatus(statuses.FAILED)
       this.log.error(e)
-      throw new Error(`${AsymChannel.type} failed initialization`)
+      this.log.error('failed initialization')
+      throw new Error('INIT_FAIL')
     }
   }
 

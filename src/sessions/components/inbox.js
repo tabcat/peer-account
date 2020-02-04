@@ -3,15 +3,13 @@
 const Component = require('./component')
 const AsymChannel = require('../asymChannel')
 const Contact = require('../contact')
-// const SessionName = require('../sessionName')
 
-const status = {
+const statuses = {
   PRE_INIT: 'PRE_INIT',
   INIT: 'INIT',
   READY: 'READY',
   FAILED: 'FAILED'
 }
-const setStatus = require('../../utils').setStatus(status)
 
 class Inbox extends Component {
   constructor (account, offer, capability, options) {
@@ -24,14 +22,14 @@ class Inbox extends Component {
 
   async _initialize () {
     try {
-      setStatus(this, status.INIT)
+      this.setStatus(statuses.INIT)
       await this._attachState()
 
       const inboxSession = await this._matchRecord('inbox')
       if (!inboxSession) {
         this.inbox = await AsymChannel.offer(
           this._orbitdbC,
-          { ...this.options, supported: [Contact.type], log: this.log }
+          { ...this.options, supported: [Contact.type] }
         )
         await this._setRecord('inbox', this.inbox.toJSON())
       } else {
@@ -39,7 +37,7 @@ class Inbox extends Component {
           this._orbitdbC,
           inboxSession.offer,
           inboxSession.capability,
-          { ...this.options, log: this.log }
+          { ...this.options }
         )
       }
       await Promise.all([
@@ -59,11 +57,12 @@ class Inbox extends Component {
         () => this.events.emit('replicated')
       )
 
-      setStatus(this, status.READY)
+      this.setStatus(statuses.READY)
     } catch (e) {
-      setStatus(this, status.FAILED)
+      this.setStatus(statuses.FAILED)
       this.log.error(e)
-      throw new Error(`${Inbox.type} failed initialization`)
+      this.log.error('failed initialization')
+      throw new Error('INIT_FAIL')
     }
   }
 

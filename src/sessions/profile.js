@@ -3,14 +3,13 @@
 const Session = require('./session')
 const SessionId = require('./sessionId')
 
-const status = {
+const statuses = {
   INIT: 'INIT',
   FROM_ADDRESS: 'FROM_ADDRESS',
   FROM_OFFER: 'FROM_OFFER',
   READY: 'READY',
   FAILED: 'FAILED'
 }
-const setStatus = require('../utils').setStatus(status)
 
 class Profile extends Session {
   constructor (orbitdbC, offer, capability, options = {}) {
@@ -19,12 +18,14 @@ class Profile extends Session {
     this.initialized = this._initialize()
   }
 
+  static get type () { return 'profile' }
+
   async _initialize () {
     try {
-      setStatus(this, status.INIT)
+      this.setStatus(statuses.INIT)
 
       if (this.offer.sessionId && this.offer.profile) {
-        setStatus(this, status.FROM_ADDRESS)
+        this.setStatus(statuses.FROM_ADDRESS)
         const dbAddr = await this._orbitdbC.parseAddress(this.offer.profile)
         if (this.offer.sessionId !== dbAddr.path) {
           throw new Error('sessionId does not match address')
@@ -47,7 +48,7 @@ class Profile extends Session {
           identityProvider
         })
       } else {
-        setStatus(this, status.FROM_OFFER)
+        this.setStatus(statuses.FROM_OFFER)
         this._state = await this._orbitdbC.openDb({
           name: this.offer.sessionId,
           type: 'eventlog',
@@ -65,15 +66,14 @@ class Profile extends Session {
       }
 
       this.isOwner = this.offer.meta.owner.id === this.capability.id
-      setStatus(this, status.READY)
+      this.setStatus(statuses.READY)
     } catch (e) {
-      setStatus(this, status.FAILED)
+      this.setStatus(statuses.FAILED)
       this.log.error(e)
-      throw new Error(`${Profile.type} failed initialization`)
+      this.log.error('failed initialization')
+      throw new Error('INIT_FAIL')
     }
   }
-
-  static get type () { return 'profile' }
 
   async address () {
     await this.initialized

@@ -4,13 +4,12 @@ const SessionManager = require('./sessionManager')
 const Profile = require('../profile')
 const SessionId = require('../sessionId')
 
-const status = {
+const statuses = {
   PRE_INIT: 'PRE_INIT',
   INIT: 'INIT',
   READY: 'READY',
   FAILED: 'FAILED'
 }
-const setStatus = require('../../utils').setStatus(status)
 
 class Profiles extends SessionManager {
   constructor (account, offer, capability, options) {
@@ -24,7 +23,7 @@ class Profiles extends SessionManager {
 
   async _initialize () {
     try {
-      setStatus(this, status.INIT)
+      this.setStatus(statuses.INIT)
       await this._attachState()
 
       const myProfile = 'myProfile'
@@ -42,12 +41,12 @@ class Profiles extends SessionManager {
           )
       }
 
-      setStatus(this, status.READY)
+      this.setStatus(statuses.READY)
     } catch (e) {
-      setStatus(this, status.FAILED)
-      console.error(e)
+      this.setStatus(statuses.FAILED)
       this.log.error(e)
-      throw new Error(`${Profiles.type} failed initialization`)
+      this.log.error('failed initialization')
+      throw new Error('INIT_FAIL')
     }
   }
 
@@ -83,7 +82,8 @@ class Profiles extends SessionManager {
     const profile = await this.sessionBy(recordId)
 
     profile.events.once('status:READY', async () => {
-      const record = await this._matchRecord(recordId)
+      const [record] =
+        await this._queryRecords(record => record.recordId === recordId)
       if (!record) {
         this.log.error(
           `${profile.offer.sessionId} is ready but record does not exist to update.`
@@ -94,7 +94,7 @@ class Profiles extends SessionManager {
         profile.offer.sessionId,
         { ...record, session: profile.toJSON() }
       )
-      this.log(`${profile.offer.sessionId} complete record added`)
+      this.log.debug(`${profile.offer.sessionId} complete record added`)
     })
   }
 }

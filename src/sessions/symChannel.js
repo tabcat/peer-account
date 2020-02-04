@@ -4,13 +4,12 @@ const Channel = require('./channel')
 const SessionId = require('./sessionId')
 const crypto = require('@tabcat/peer-account-crypto')
 
-const status = {
+const statuses = {
   PRE_INIT: 'PRE_INIT',
   INIT: 'INIT',
   LISTENING: 'LISTENING',
   FAILED: 'FAILED'
 }
-const setStatus = require('../utils').setStatus(status)
 
 class SymChannel extends Channel {
   constructor (orbitdbC, offer, capability, options = {}) {
@@ -21,7 +20,7 @@ class SymChannel extends Channel {
 
   async _initialize () {
     try {
-      setStatus(this, status.INIT)
+      this.setStatus(statuses.INIT)
       this._state = await this._orbitdbC.openDb({
         name: this.offer.sessionId,
         type: 'docstore',
@@ -39,11 +38,12 @@ class SymChannel extends Channel {
       this._supported = this.offer.meta.supported
       this._state.events.on('replicated', () => this.events.emit('replicated'))
       this._state.events.on('write', () => this.events.emit('write'))
-      setStatus(this, status.LISTENING)
+      this.setStatus(statuses.LISTENING)
     } catch (e) {
-      setStatus(this, status.FAILED)
+      this.setStatus(statuses.FAILED)
       this.log.error(e)
-      throw new Error(`${SymChannel.type} failed initialization`)
+      this.log.error('failed initialization')
+      throw new Error('INIT_FAIL')
     }
   }
 
