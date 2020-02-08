@@ -20,7 +20,7 @@
   "license": "MIT",
   "dependencies": {
     "@tabcat/encrypted-docstore": "^3.0.3",
-    "@tabcat/peer-account-crypto": "0.0.3",
+    "@tabcat/peer-account-crypto": "0.0.4",
     "logplease": "^1.2.15"
   },
   "devDependencies": {
