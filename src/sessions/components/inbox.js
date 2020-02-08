@@ -14,7 +14,7 @@ const statuses = {
 class Inbox extends Component {
   constructor (account, offer, capability, options) {
     super(account, offer, capability, options)
-    this.inbox = null
+    this.myInbox = null
     this.initialized = this._initialize()
   }
 
@@ -27,13 +27,13 @@ class Inbox extends Component {
 
       const inboxSession = await this._matchRecord('inbox')
       if (!inboxSession) {
-        this.inbox = await AsymChannel.offer(
+        this.myInbox = await AsymChannel.offer(
           this._orbitdbC,
           { ...this.options, supported: [Contact.type] }
         )
-        await this._setRecord('inbox', this.inbox.toJSON())
+        await this._setRecord('inbox', this.myInbox.toJSON())
       } else {
-        this.inbox = await AsymChannel.open(
+        this.myInbox = await AsymChannel.open(
           this._orbitdbC,
           inboxSession.offer,
           inboxSession.capability,
@@ -41,18 +41,18 @@ class Inbox extends Component {
         )
       }
       await Promise.all([
-        this.inbox.initialized,
+        this.myInbox.initialized,
         this._account.profiles.initialized
       ])
 
       const myProfile = this._account.profiles.myProfile
       const inboxAddress = await myProfile.getField('inbox')
-      const address = await this.inbox.address()
+      const address = await this.myInbox.address()
       if (inboxAddress !== address) {
         await myProfile.setField('inbox', address.toString())
       }
 
-      this.inbox._state.events.on(
+      this.myInbox._state.events.on(
         'replicated',
         () => this.events.emit('replicated')
       )
@@ -68,11 +68,11 @@ class Inbox extends Component {
 
   async inboxAddress () {
     await this.initialized
-    return this.inbox.address
+    return this.myInbox.address
   }
 
   async inboxRead () {
-    return this.inbox.getOffers()
+    return this.myInbox.getOffers()
   }
 
   async inboxQuery (mapper) {

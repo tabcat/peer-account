@@ -10,6 +10,8 @@ const Messages = require('./sessions/components/messages')
 const EventEmitter = require('events').EventEmitter
 const Logger = require('logplease')
 
+Logger.setLogLevel(Logger.LogLevels.DEBUG)
+
 const components = [Manifest, Profiles, Inbox, Contacts, Messages]
 
 // const defaultOptions = {}
@@ -30,6 +32,7 @@ class PeerAccount {
     this._components = components.reduce((a, c) => ({ ...a, [c.type]: c }))
 
     this.events = new EventEmitter()
+    this.Logger = Logger
     this.log = Logger.create(`account-${loggerId}`)
 
     this.events.on('status', status => this.log(`status set to ${status}`))

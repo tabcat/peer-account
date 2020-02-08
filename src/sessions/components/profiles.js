@@ -51,6 +51,7 @@ class Profiles extends SessionManager {
   }
 
   async profileOpen (profileAddress, options = {}) {
+    await this.initialized
     profileAddress = profileAddress.toString()
     if (await this._idsRecorded().then(ids => ids.has(profileAddress))) {
       return this.sessionBy(profileAddress)

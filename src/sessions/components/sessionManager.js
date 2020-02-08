@@ -32,6 +32,7 @@ class SessionManager extends Component {
   }
 
   async existingIds () {
+    if (!this._state) await this.initialized
     return new Set([
       ...this._idsQueued().values(),
       ...(await this._idsRecorded()).values()
@@ -39,14 +40,17 @@ class SessionManager extends Component {
   }
 
   async existId (recordId) {
+    if (!this._state) await this.initialized
     return this.existingIds().then(set => set.has(recordId))
   }
 
   async recordsRead () {
+    if (!this._state) await this.initialized
     return this._getRecords(this.Session.type)
   }
 
   async recordsQuery (mapper = () => true) {
+    if (!this._state) await this.initialized
     return this._queryRecords(record =>
       record.sessionId.startsWith(this.Session.type) && mapper(record)
     ).catch(e => { this.log.error(e); throw e })
@@ -69,9 +73,9 @@ class SessionManager extends Component {
     if (await this._idsRecorded().then(ids => !ids.has(recordId))) {
       throw new Error('no record found for that session')
     }
-    const [{ session }] =
+    const [{ session: { offer, capability } }] =
       await this.recordsQuery(record => record.recordId === recordId)
-    return this.sessionOpen(session.offer, session.capability, options)
+    return this.sessionOpen(offer, capability, { ...options, recordId })
   }
 
   sessionOpen (offer, capability, options = {}) {

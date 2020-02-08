@@ -65,6 +65,7 @@ class Profile extends Session {
         })
       }
 
+      this._state.events.on('replicated', () => this.events.emit('replicated'))
       this.isOwner = this.offer.meta.owner.id === this.capability.id
       this.setStatus(statuses.READY)
     } catch (e) {
@@ -86,11 +87,13 @@ class Profile extends Session {
   }
 
   async setProfile (profile) {
+    await this.initialized
     if (!this.isOwner) throw new Error('called setName on unowned profile')
     await this._state.add(profile)
   }
 
   async getProfile () {
+    await this.initialized
     const entry = this._state.iterator().collect().map(e => e.payload.value)[0]
     return entry || { name: SessionId.parse(this.offer.sessionId).pos }
   }

@@ -87,7 +87,7 @@ class Session {
     })
   }
 
-  static open (p2p, offer, capability, options = {}) {
+  static async open (p2p, offer, capability, options = {}) {
     return new this(p2p, offer, capability, options)
   }
 

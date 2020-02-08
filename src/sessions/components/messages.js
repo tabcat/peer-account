@@ -26,7 +26,7 @@ class Messages extends SessionManager {
       if (this.options.load !== false) {
         this._getRecords(Message.type)
           .then(records => records.map(
-            ({ recordId }) => this.contactBy(recordId))
+            ({ recordId }) => this.messageBy(recordId))
           )
       }
 
@@ -40,14 +40,17 @@ class Messages extends SessionManager {
   }
 
   async messageBy (profile) {
+    await this.initialized
     return this.sessionBy(profile.toString())
   }
 
   async messageOpen (offer, capability, options) {
+    await this.initialized
     return this.sessionOpen(offer, capability, options)
   }
 
   async messageAccept (offer, options) {
+    await this.initialized
     return this.sessionAccept(offer, options)
   }
 }

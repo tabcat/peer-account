@@ -36,6 +36,8 @@ class Message extends Session {
           meta: this.offer.meta
         }
       })
+      this._state.events.on('replicated', () => this.events.emit('replicated'))
+      this._state.events.on('write', () => this.events.emit('write'))
       this.setStatus(statuses.READY)
     } catch (e) {
       this.setStatus(statuses.FAILED)

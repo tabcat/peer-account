@@ -29,8 +29,11 @@ class Contacts extends SessionManager {
       if (this.options.load !== false) {
         this._getRecords(Contact.type)
           .then(records => records.map(
-            ({ recordId }) => this.contactBy(recordId))
-          )
+            ({ recordId }) => this.sessionBy(
+              recordId,
+              { profilesComponent: this._account.profiles }
+            )
+          ))
       }
 
       this.setStatus(statuses.READY)
@@ -42,12 +45,17 @@ class Contacts extends SessionManager {
     }
   }
 
-  async contactBy (profile, options) {
-    return this.sessionBy(profile.toString(), { ...options, profilesComponent: this._account.profiles })
+  async contactBy (profile) {
+    await this.initialized
+    return this.sessionBy(
+      profile.toString(),
+      { profilesComponent: this._account.profiles }
+    )
   }
 
   async contactAdd (profile, options = {}) {
-    const metadata = { origin: options.origin || profile }
+    await this.initialized
+    const metadata = { ...options.metadata, origin: options.origin || profile }
     if (await this.existId(profile.toString())) {
       throw new Error('contact already added')
     }
@@ -56,8 +64,11 @@ class Contacts extends SessionManager {
       metadata,
       recordId: profile.toString(),
       profilesComponent: this._account.profiles,
-      sender: (await this._account.profiles.myProfile.address()).toString(),
-      recipient: profile.toString()
+      sender: {
+        ipfsAddr: options.ipfsAddr,
+        profile: (await this._account.profiles.myProfile.address()).toString()
+      },
+      recipient: { profile: profile.toString() }
     }
     return this._contactFromAddress(profile, options)
   }
@@ -78,7 +89,11 @@ class Contacts extends SessionManager {
   }
 
   async contactAccept (offer, options = {}) {
-    return this.sessionAccept(offer, { ...options, handshake: { idKey: offer._channel.sessionId } })
+    await this.initialized
+    return this.sessionAccept(
+      offer,
+      { ...options, handshake: { idKey: offer._channel.sessionId } }
+    )
   }
 
   async _onOpenedSession (recordId) {
